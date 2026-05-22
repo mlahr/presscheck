@@ -1,0 +1,20 @@
+fail_at: error
+checks:
+  document_integrity.ghostscript_processable:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  geometry.page_boxes_present:
+    enabled: true
+    severity: error
+    required_boxes:
+      - MediaBox
+      - TrimBox
+      - BleedBox
+  geometry.trim_size_matches:
+    enabled: true
+    severity: error
+    expected_width_pt: 612
+    expected_height_pt: 792
+    tolerance_pt: 0.5
+
