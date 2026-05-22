@@ -31,6 +31,8 @@ checks:
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["ok"] is False
     assert payload["failed"] is True
+    assert payload["summary"]["total_findings"] == 1
+    assert payload["summary"]["by_check"][0]["check_id"] == "document_integrity.pdf_parseable"
     assert payload["findings"][0]["check_id"] == "document_integrity.pdf_parseable"
 
 

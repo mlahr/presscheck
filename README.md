@@ -95,30 +95,50 @@ Run the Java analyzer tests:
 
 ## Inspect Reports
 
-Summarize findings by check:
+Reports include a built-in summary:
+
+```json
+{
+  "summary": {
+    "total_findings": 3,
+    "by_severity": {
+      "info": 0,
+      "warning": 1,
+      "error": 2
+    },
+    "by_check": [
+      {
+        "check_id": "fonts.non_embedded",
+        "category": "fonts",
+        "severity": "error",
+        "count": 2,
+        "pages": [1, 2]
+      }
+    ]
+  }
+}
+```
+
+Print the summary:
+
+```bash
+jq '.summary' report.json
+```
+
+Compact summary table:
 
 ```bash
 jq -r '
-  .findings
-  | group_by(.check_id)
-  | map({
-      check_id: .[0].check_id,
-      severity: .[0].severity,
-      count: length,
-      pages: ([.[].page] | map(select(. != null)) | unique)
-    })
+  .summary.by_check[]
+  | [.severity, .category, .check_id, .count, (.pages | join(","))]
+  | @tsv
 ' report.json
 ```
 
-Compact table:
+Inspect raw findings if needed:
 
 ```bash
-jq -r '
-  .findings
-  | group_by(.check_id)
-  | map([.[0].severity, .[0].check_id, length] | @tsv)
-  | .[]
-' report.json
+jq '.findings[]' report.json
 ```
 
 ## Current Checks
