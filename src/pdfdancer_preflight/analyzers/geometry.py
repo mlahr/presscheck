@@ -10,6 +10,7 @@ from pdfdancer_preflight.models import Finding, TargetConfig
 
 PAGE_BOXES_CHECK = "geometry.page_boxes_present"
 TRIM_SIZE_CHECK = "geometry.trim_size_matches"
+BLEED_MARGIN_CHECK = "geometry.bleed_margin_at_least"
 logger = logging.getLogger(__name__)
 
 BOX_KEYS = {
@@ -21,7 +22,11 @@ BOX_KEYS = {
 
 
 def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
-    if target.check(PAGE_BOXES_CHECK) is None and target.check(TRIM_SIZE_CHECK) is None:
+    if (
+        target.check(PAGE_BOXES_CHECK) is None
+        and target.check(TRIM_SIZE_CHECK) is None
+        and target.check(BLEED_MARGIN_CHECK) is None
+    ):
         logger.debug("all geometry checks disabled")
         return []
 
@@ -62,6 +67,10 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     trim_size_check = target.check(TRIM_SIZE_CHECK)
     if trim_size_check is not None:
         findings.extend(_check_trim_size(reader, trim_size_check.severity, trim_size_check.params))
+
+    bleed_margin_check = target.check(BLEED_MARGIN_CHECK)
+    if bleed_margin_check is not None:
+        findings.extend(_check_bleed_margin(reader, bleed_margin_check.severity, bleed_margin_check.params))
 
     logger.info("geometry checks completed: findings=%s", len(findings))
     return findings
@@ -125,6 +134,40 @@ def _check_trim_size(reader: PdfReader, severity, params: dict[str, Any]) -> lis
     return findings
 
 
+def _check_bleed_margin(reader: PdfReader, severity, params: dict[str, Any]) -> list[Finding]:
+    required_margin = _required_number(params, "margin_pt", BLEED_MARGIN_CHECK)
+    tolerance = float(params.get("tolerance_pt", 0))
+
+    findings: list[Finding] = []
+    for page_index, page in enumerate(reader.pages, start=1):
+        trim_box = page.get("/TrimBox")
+        bleed_box = page.get("/BleedBox")
+        if trim_box is None or bleed_box is None:
+            continue
+
+        margins = {
+            "left_pt": float(trim_box[0]) - float(bleed_box[0]),
+            "bottom_pt": float(trim_box[1]) - float(bleed_box[1]),
+            "right_pt": float(bleed_box[2]) - float(trim_box[2]),
+            "top_pt": float(bleed_box[3]) - float(trim_box[3]),
+        }
+        too_small = {side: value for side, value in margins.items() if value + tolerance < required_margin}
+        if too_small:
+            findings.append(
+                Finding(
+                    check_id=BLEED_MARGIN_CHECK,
+                    category="geometry",
+                    severity=severity,
+                    message="BleedBox does not extend far enough beyond TrimBox.",
+                    analyzer="geometry",
+                    page=page_index,
+                    observed={"margins": margins, "too_small": too_small},
+                    threshold={"margin_pt": required_margin, "tolerance_pt": tolerance},
+                )
+            )
+    return findings
+
+
 def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:
     value = params.get(name)
     if not isinstance(value, int | float):
@@ -133,7 +176,7 @@ def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:
 
 
 def _fallback_severity(target: TargetConfig):
-    for check_id in (PAGE_BOXES_CHECK, TRIM_SIZE_CHECK):
+    for check_id in (PAGE_BOXES_CHECK, TRIM_SIZE_CHECK, BLEED_MARGIN_CHECK):
         check = target.check(check_id)
         if check is not None:
             return check.severity

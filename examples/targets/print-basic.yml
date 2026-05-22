@@ -54,3 +54,8 @@ checks:
     expected_width_pt: 612
     expected_height_pt: 792
     tolerance_pt: 0.5
+  geometry.bleed_margin_at_least:
+    enabled: true
+    severity: error
+    margin_pt: 9
+    tolerance_pt: 0.5

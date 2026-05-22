@@ -157,6 +157,7 @@ jq '.findings[]' report.json
 - `transparency.live_transparency_policy`: target-driven policy for applied live transparency features
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
+- `geometry.bleed_margin_at_least`
 
 ## Target Config
 
@@ -226,6 +227,11 @@ checks:
     expected_width_pt: 612
     expected_height_pt: 792
     tolerance_pt: 0.5
+  geometry.bleed_margin_at_least:
+    enabled: true
+    severity: error
+    margin_pt: 9
+    tolerance_pt: 0.5
 ```
 
 Severity levels:
@@ -243,5 +249,6 @@ Severity levels:
 - Image effective resolution and image color-space policy checks cover page content and nested Form XObject content.
 - Print target requires an OutputIntent; ebook target disables that requirement.
 - Transparency policy checks cover applied graphics states and directly used transparency-group XObjects in page and Form XObject content.
+- Structural bleed checks compare BleedBox margins against TrimBox; they do not verify that artwork visually fills the bleed area.
 - `summary.color.image_color_space_findings_by_family` counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.
