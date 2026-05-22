@@ -113,4 +113,4 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             "pages": [],
         },
     ]
-    assert summary["color"]["image_color_space_families"] == {"ICCBasedRGB": 2, "Indexed": 1}
+    assert summary["color"]["image_color_space_findings_by_family"] == {"ICCBasedRGB": 2, "Indexed": 1}

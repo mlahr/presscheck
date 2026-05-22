@@ -116,7 +116,7 @@ Reports include a built-in summary:
       }
     ],
     "color": {
-      "image_color_space_families": {
+      "image_color_space_findings_by_family": {
         "ICCBasedRGB": 77,
         "Indexed": 17
       }
@@ -232,5 +232,5 @@ Severity levels:
 - Image effective resolution checks currently cover direct image placements only, not images nested inside Form XObjects.
 - Image color-space policy is target-dependent and currently covers direct image placements only.
 - Print target requires an OutputIntent; ebook target disables that requirement.
-- `summary.color.image_color_space_families` currently counts color policy findings, not all allowed image color spaces.
+- `summary.color.image_color_space_findings_by_family` counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

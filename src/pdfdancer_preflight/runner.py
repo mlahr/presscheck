@@ -87,12 +87,12 @@ def summarize_findings(findings: list[Finding]) -> dict[str, Any]:
         "by_severity": by_severity,
         "by_check": checks,
         "color": {
-            "image_color_space_families": _image_color_space_family_counts(findings),
+            "image_color_space_findings_by_family": _image_color_space_finding_family_counts(findings),
         },
     }
 
 
-def _image_color_space_family_counts(findings: list[Finding]) -> dict[str, int]:
+def _image_color_space_finding_family_counts(findings: list[Finding]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for finding in findings:
         if finding.check_id != "color.image_color_space_policy":
