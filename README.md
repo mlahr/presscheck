@@ -144,7 +144,7 @@ jq '.findings[]' report.json
 ## Current Checks
 
 - `document_integrity.ghostscript_processable`
-- `fonts.non_embedded`
+- `fonts.non_embedded`: grouped by font name and subtype
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
 

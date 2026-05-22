@@ -22,7 +22,7 @@ def _target() -> TargetConfig:
     )
 
 
-def test_pdfbox_adapter_maps_non_embedded_font_evidence(tmp_path: Path, monkeypatch) -> None:
+def test_pdfbox_adapter_groups_non_embedded_font_evidence(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
     monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
@@ -39,10 +39,37 @@ def test_pdfbox_adapter_maps_non_embedded_font_evidence(tmp_path: Path, monkeypa
     {
       "check_id": "fonts.non_embedded",
       "category": "fonts",
+      "page": 2,
+      "resource_name": "F2",
+      "font_name": "Helvetica",
+      "subtype": "Type1",
+      "embedded": false
+    },
+    {
+      "check_id": "fonts.non_embedded",
+      "category": "fonts",
       "page": 1,
       "resource_name": "F1",
       "font_name": "Helvetica",
       "subtype": "Type1",
+      "embedded": false
+    },
+    {
+      "check_id": "fonts.non_embedded",
+      "category": "fonts",
+      "page": 2,
+      "resource_name": "F1",
+      "font_name": "Helvetica",
+      "subtype": "Type1",
+      "embedded": false
+    },
+    {
+      "check_id": "fonts.non_embedded",
+      "category": "fonts",
+      "page": 3,
+      "resource_name": "F3",
+      "font_name": "Helvetica",
+      "subtype": "TrueType",
       "embedded": false
     }
   ]
@@ -54,12 +81,31 @@ def test_pdfbox_adapter_maps_non_embedded_font_evidence(tmp_path: Path, monkeypa
 
     findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
 
-    assert len(findings) == 1
-    assert findings[0].check_id == "fonts.non_embedded"
-    assert findings[0].severity == Severity.warning
-    assert findings[0].page == 1
-    assert findings[0].object_ref == "F1"
-    assert findings[0].observed["font_name"] == "Helvetica"
+    assert len(findings) == 2
+
+    type1 = next(finding for finding in findings if finding.observed["subtype"] == "Type1")
+    assert type1.check_id == "fonts.non_embedded"
+    assert type1.severity == Severity.warning
+    assert type1.page is None
+    assert type1.object_ref is None
+    assert type1.observed == {
+        "font_name": "Helvetica",
+        "subtype": "Type1",
+        "embedded": False,
+        "occurrences": 3,
+        "resource_names": ["F1", "F2"],
+        "pages": [1, 2],
+    }
+
+    true_type = next(finding for finding in findings if finding.observed["subtype"] == "TrueType")
+    assert true_type.observed == {
+        "font_name": "Helvetica",
+        "subtype": "TrueType",
+        "embedded": False,
+        "occurrences": 1,
+        "resource_names": ["F3"],
+        "pages": [3],
+    }
 
 
 def test_pdfbox_adapter_fails_closed_when_jar_missing(tmp_path: Path, monkeypatch) -> None:
@@ -81,4 +127,3 @@ def test_pdfbox_adapter_fails_closed_on_invalid_json(tmp_path: Path, monkeypatch
     findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
 
     assert findings[0].check_id == "document_integrity.pdfbox_analyzer_failed"
-

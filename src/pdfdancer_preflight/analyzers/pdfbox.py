@@ -62,8 +62,14 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         logger.error("PDFBox analyzer evidence was not a list")
         return [_failure("PDFBox analyzer evidence was not a list.", target, {})]
 
-    findings = [_font_finding(item, check.severity) for item in evidence if _is_non_embedded_font_evidence(item)]
-    logger.info("PDFBox analyzer completed: evidence=%s findings=%s", len(evidence), len(findings))
+    font_evidence = [item for item in evidence if _is_non_embedded_font_evidence(item)]
+    findings = _group_non_embedded_font_findings(font_evidence, check.severity)
+    logger.info(
+        "PDFBox analyzer completed: evidence=%s font_evidence=%s findings=%s",
+        len(evidence),
+        len(font_evidence),
+        len(findings),
+    )
     return findings
 
 
@@ -78,25 +84,52 @@ def _is_non_embedded_font_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == NON_EMBEDDED_FONTS_CHECK and item.get("embedded") is False
 
 
-def _font_finding(item: dict[str, Any], severity: Severity) -> Finding:
-    font_name = str(item.get("font_name", "unknown"))
-    page = item.get("page")
-    return Finding(
-        check_id=NON_EMBEDDED_FONTS_CHECK,
-        category="fonts",
-        severity=severity,
-        message=f"Font is not embedded: {font_name}.",
-        analyzer="pdfbox",
-        source_tool="pdfbox",
-        page=page if isinstance(page, int) else None,
-        object_ref=str(item["resource_name"]) if "resource_name" in item else None,
-        observed={
-            "font_name": font_name,
-            "resource_name": item.get("resource_name"),
-            "subtype": item.get("subtype"),
-            "embedded": False,
-        },
-    )
+def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in evidence:
+        font_name = str(item.get("font_name", "unknown"))
+        subtype = str(item.get("subtype", "unknown"))
+        group = groups.setdefault(
+            (font_name, subtype),
+            {
+                "font_name": font_name,
+                "subtype": subtype,
+                "occurrences": 0,
+                "pages": set(),
+                "resource_names": set(),
+            },
+        )
+        group["occurrences"] += 1
+        page = item.get("page")
+        if isinstance(page, int):
+            group["pages"].add(page)
+        resource_name = item.get("resource_name")
+        if resource_name is not None:
+            group["resource_names"].add(str(resource_name))
+
+    findings = []
+    for group in groups.values():
+        findings.append(
+            Finding(
+                check_id=NON_EMBEDDED_FONTS_CHECK,
+                category="fonts",
+                severity=severity,
+                message=f"Font is not embedded: {group['font_name']}.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                observed={
+                    "font_name": group["font_name"],
+                    "subtype": group["subtype"],
+                    "embedded": False,
+                    "occurrences": group["occurrences"],
+                    "resource_names": sorted(group["resource_names"]),
+                    "pages": sorted(group["pages"]),
+                },
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.observed["font_name"], finding.observed["subtype"]))
+    return findings
 
 
 def _failure(message: str, target: TargetConfig, observed: dict[str, Any]) -> Finding:

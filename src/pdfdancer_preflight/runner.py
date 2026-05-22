@@ -63,6 +63,11 @@ def summarize_findings(findings: list[Finding]) -> dict[str, Any]:
         entry["count"] += 1
         if finding.page is not None:
             entry["pages"].add(finding.page)
+        observed_pages = finding.observed.get("pages")
+        if isinstance(observed_pages, list):
+            for page in observed_pages:
+                if isinstance(page, int):
+                    entry["pages"].add(page)
 
     checks = []
     for entry in by_check.values():

@@ -25,7 +25,7 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             severity=Severity.error,
             message="font",
             analyzer="test",
-            page=2,
+            observed={"pages": [2, 4]},
         ),
         Finding(
             check_id="fonts.non_embedded",
@@ -33,7 +33,7 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             severity=Severity.error,
             message="font",
             analyzer="test",
-            page=1,
+            observed={"pages": [1, 2]},
         ),
         Finding(
             check_id="geometry.page_boxes_present",
@@ -54,7 +54,7 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             "category": "fonts",
             "severity": "error",
             "count": 2,
-            "pages": [1, 2],
+            "pages": [1, 2, 4],
         },
         {
             "check_id": "geometry.page_boxes_present",
