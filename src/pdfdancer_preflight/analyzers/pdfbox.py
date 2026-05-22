@@ -12,12 +12,14 @@ from pypdf import PdfReader
 from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
+MINIMUM_TEXT_SIZE_CHECK = "fonts.minimum_text_size"
 LOW_EFFECTIVE_RESOLUTION_CHECK = "images.low_effective_resolution"
 IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
 OUTPUT_INTENT_REQUIRED_CHECK = "color.output_intent_required"
 LIVE_TRANSPARENCY_POLICY_CHECK = "transparency.live_transparency_policy"
 OBJECT_BOUNDS_WITHIN_BOX_CHECK = "geometry.object_bounds_within_box"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
+TEXT_SIZE_EVIDENCE = "fonts.text_size"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
 TRANSPARENCY_FEATURES_EVIDENCE = "transparency.features"
 OBJECT_BOUNDS_EVIDENCE = "geometry.object_bounds"
@@ -37,6 +39,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         check
         for check in (
             target.check(NON_EMBEDDED_FONTS_CHECK),
+            target.check(MINIMUM_TEXT_SIZE_CHECK),
             target.check(LOW_EFFECTIVE_RESOLUTION_CHECK),
             target.check(IMAGE_COLOR_SPACE_POLICY_CHECK),
             target.check(OUTPUT_INTENT_REQUIRED_CHECK),
@@ -97,6 +100,13 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if font_check is not None:
         findings.extend(_group_non_embedded_font_findings(font_evidence, font_check.severity))
 
+    text_size_check = target.check(MINIMUM_TEXT_SIZE_CHECK)
+    text_size_evidence = [item for item in evidence if _is_text_size_evidence(item)]
+    if text_size_check is not None:
+        findings.extend(
+            _minimum_text_size_findings(text_size_evidence, text_size_check.severity, text_size_check.params)
+        )
+
     image_check = target.check(LOW_EFFECTIVE_RESOLUTION_CHECK)
     image_evidence = [item for item in evidence if _is_effective_resolution_evidence(item)]
     if image_check is not None:
@@ -130,10 +140,12 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
 
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
-        "output_intent_evidence=%s transparency_evidence=%s object_bounds_evidence=%s findings=%s",
+        "text_size_evidence=%s output_intent_evidence=%s transparency_evidence=%s "
+        "object_bounds_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
+        len(text_size_evidence),
         len(output_intent_evidence),
         len(transparency_evidence),
         len(object_bounds_evidence),
@@ -155,6 +167,10 @@ def _is_non_embedded_font_evidence(item: Any) -> bool:
 
 def _is_effective_resolution_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == EFFECTIVE_RESOLUTION_EVIDENCE
+
+
+def _is_text_size_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == TEXT_SIZE_EVIDENCE
 
 
 def _is_output_intents_evidence(item: Any) -> bool:
@@ -214,6 +230,76 @@ def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: 
         )
 
     findings.sort(key=lambda finding: (finding.observed["font_name"], finding.observed["subtype"]))
+    return findings
+
+
+def _minimum_text_size_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    min_pt = _required_number(params, "min_pt", MINIMUM_TEXT_SIZE_CHECK)
+    groups: dict[tuple[str, str, float, float], dict[str, Any]] = {}
+    for item in evidence:
+        effective_size = _number_or_none(item.get("effective_size_pt"))
+        if effective_size is None or effective_size >= min_pt:
+            continue
+        horizontal_size = _number_or_none(item.get("horizontal_size_pt"))
+        if horizontal_size is None:
+            horizontal_size = effective_size
+        font_name = str(item.get("font_name", "unknown"))
+        subtype = str(item.get("subtype", "unknown"))
+        group = groups.setdefault(
+            (font_name, subtype, effective_size, horizontal_size),
+            {
+                "font_name": font_name,
+                "subtype": subtype,
+                "effective_size_pt": effective_size,
+                "horizontal_size_pt": horizontal_size,
+                "occurrences": 0,
+                "pages": set(),
+                "resource_paths": set(),
+            },
+        )
+        occurrences = item.get("occurrences")
+        group["occurrences"] += occurrences if isinstance(occurrences, int) else 1
+        page = item.get("page")
+        if isinstance(page, int):
+            group["pages"].add(page)
+        resource_path = item.get("resource_path")
+        if isinstance(resource_path, str) and resource_path:
+            group["resource_paths"].add(resource_path)
+
+    findings = []
+    for group in groups.values():
+        observed = {
+            "font_name": group["font_name"],
+            "subtype": group["subtype"],
+            "effective_size_pt": group["effective_size_pt"],
+            "horizontal_size_pt": group["horizontal_size_pt"],
+            "occurrences": group["occurrences"],
+            "pages": sorted(group["pages"]),
+        }
+        if group["resource_paths"]:
+            observed["resource_paths"] = sorted(group["resource_paths"])
+        findings.append(
+            Finding(
+                check_id=MINIMUM_TEXT_SIZE_CHECK,
+                category="fonts",
+                severity=severity,
+                message=f"Text effective size is below {min_pt:g} pt.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                observed=observed,
+                threshold={"min_pt": min_pt},
+            )
+        )
+
+    findings.sort(
+        key=lambda finding: (
+            finding.observed["effective_size_pt"],
+            finding.observed["font_name"],
+            finding.observed["subtype"],
+        )
+    )
     return findings
 
 

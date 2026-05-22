@@ -21,6 +21,12 @@ def _target() -> TargetConfig:
                 severity=Severity.warning,
                 params={},
             ),
+            "fonts.minimum_text_size": CheckConfig(
+                check_id="fonts.minimum_text_size",
+                enabled=True,
+                severity=Severity.warning,
+                params={"min_pt": 6},
+            ),
             "images.low_effective_resolution": CheckConfig(
                 check_id="images.low_effective_resolution",
                 enabled=True,
@@ -192,6 +198,164 @@ def test_pdfbox_adapter_fails_closed_on_invalid_json(tmp_path: Path, monkeypatch
     findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
 
     assert findings[0].check_id == "document_integrity.pdfbox_analyzer_failed"
+
+
+def test_pdfbox_adapter_maps_minimum_text_size_evidence(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 2},
+  "evidence": [
+    {
+      "check_id": "fonts.text_size",
+      "category": "fonts",
+      "page": 1,
+      "font_name": "Helvetica",
+      "subtype": "Type1",
+      "effective_size_pt": 4.5,
+      "horizontal_size_pt": 4.5,
+      "occurrences": 3
+    },
+    {
+      "check_id": "fonts.text_size",
+      "category": "fonts",
+      "page": 2,
+      "resource_path": "Form1",
+      "font_name": "Helvetica",
+      "subtype": "Type1",
+      "effective_size_pt": 4.5,
+      "horizontal_size_pt": 4.5,
+      "occurrences": 5
+    },
+    {
+      "check_id": "fonts.text_size",
+      "category": "fonts",
+      "page": 2,
+      "font_name": "Helvetica",
+      "subtype": "Type1",
+      "effective_size_pt": 8.0,
+      "horizontal_size_pt": 8.0,
+      "occurrences": 2
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "fonts.minimum_text_size": CheckConfig(
+                check_id="fonts.minimum_text_size",
+                enabled=True,
+                severity=Severity.warning,
+                params={"min_pt": 6},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "fonts.minimum_text_size"
+    assert findings[0].category == "fonts"
+    assert findings[0].severity == Severity.warning
+    assert findings[0].observed == {
+        "font_name": "Helvetica",
+        "subtype": "Type1",
+        "effective_size_pt": 4.5,
+        "horizontal_size_pt": 4.5,
+        "occurrences": 8,
+        "pages": [1, 2],
+        "resource_paths": ["Form1"],
+    }
+    assert findings[0].threshold == {"min_pt": 6.0}
+
+
+def test_pdfbox_adapter_allows_text_at_minimum_size(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "fonts.text_size",
+      "category": "fonts",
+      "page": 1,
+      "font_name": "Helvetica",
+      "subtype": "Type1",
+      "effective_size_pt": 6.0,
+      "horizontal_size_pt": 6.0,
+      "occurrences": 3
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "fonts.minimum_text_size": CheckConfig(
+                check_id="fonts.minimum_text_size",
+                enabled=True,
+                severity=Severity.warning,
+                params={"min_pt": 6},
+            )
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_rejects_missing_minimum_text_size_threshold(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout='{"ok": true, "analyzer": "pdfbox", "metadata": {"page_count": 1}, "evidence": []}',
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "fonts.minimum_text_size": CheckConfig(
+                check_id="fonts.minimum_text_size",
+                enabled=True,
+                severity=Severity.warning,
+                params={},
+            )
+        },
+    )
+
+    try:
+        pdfbox.analyze(tmp_path / "input.pdf", target)
+    except ValueError as exc:
+        assert "requires numeric parameter 'min_pt'" in str(exc)
+    else:
+        raise AssertionError("expected missing min_pt to raise ValueError")
 
 
 def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monkeypatch) -> None:

@@ -151,6 +151,7 @@ jq '.findings[]' report.json
 
 - `document_integrity.ghostscript_processable`
 - `fonts.non_embedded`: grouped by font name and subtype
+- `fonts.minimum_text_size`: grouped by font and effective rendered text size
 - `images.low_effective_resolution`: page and Form XObject image placements
 - `color.image_color_space_policy`: target-driven policy for image placement color spaces
 - `color.output_intent_required`: target-driven document-level OutputIntent requirement
@@ -181,6 +182,11 @@ checks:
   fonts.non_embedded:
     enabled: true
     severity: error
+    timeout_seconds: 60
+  fonts.minimum_text_size:
+    enabled: true
+    severity: warning
+    min_pt: 6
     timeout_seconds: 60
   images.low_effective_resolution:
     enabled: true
@@ -252,6 +258,7 @@ Severity levels:
 - Logs are written to stderr.
 - The JSON format is not stable yet.
 - Raw Ghostscript logs are not included in output.
+- Minimum text-size checks use PDF text rendering state; outlined text and text inside images are out of scope.
 - Image effective resolution and image color-space policy checks cover page content and nested Form XObject content.
 - Print target requires an OutputIntent; ebook target disables that requirement.
 - Transparency policy checks cover applied graphics states and directly used transparency-group XObjects in page and Form XObject content.

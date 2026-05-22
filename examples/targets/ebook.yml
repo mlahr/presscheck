@@ -8,6 +8,11 @@ checks:
     enabled: true
     severity: warning
     timeout_seconds: 60
+  fonts.minimum_text_size:
+    enabled: true
+    severity: warning
+    min_pt: 5
+    timeout_seconds: 60
   images.low_effective_resolution:
     enabled: true
     severity: warning

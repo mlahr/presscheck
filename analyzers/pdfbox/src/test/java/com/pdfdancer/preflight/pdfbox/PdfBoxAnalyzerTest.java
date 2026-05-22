@@ -61,6 +61,92 @@ class PdfBoxAnalyzerTest {
     }
 
     @Test
+    void reportsTextSizeEvidence() throws Exception {
+        File pdf = tempDir.resolve("text-size.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.beginText();
+                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(72, 720);
+                content.showText("Hi");
+                content.endText();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "fonts.text_size");
+        assertEquals("fonts", evidence.get("category"));
+        assertEquals(1, evidence.get("page"));
+        assertEquals("Helvetica", evidence.get("font_name"));
+        assertEquals("Type1", evidence.get("subtype"));
+        assertDoubleEquals(12.0, evidence.get("effective_size_pt"));
+        assertDoubleEquals(12.0, evidence.get("horizontal_size_pt"));
+        assertEquals(2, evidence.get("occurrences"));
+    }
+
+    @Test
+    void reportsScaledTextEffectiveSize() throws Exception {
+        File pdf = tempDir.resolve("scaled-text-size.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.saveGraphicsState();
+                content.transform(new Matrix(0.5f, 0, 0, 0.5f, 0, 0));
+                content.beginText();
+                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(72, 720);
+                content.showText("Hi");
+                content.endText();
+                content.restoreGraphicsState();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "fonts.text_size");
+        assertDoubleEquals(6.0, evidence.get("effective_size_pt"));
+        assertDoubleEquals(6.0, evidence.get("horizontal_size_pt"));
+    }
+
+    @Test
+    void reportsTextSizeInsideFormXObject() throws Exception {
+        File pdf = tempDir.resolve("form-text-size.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDFormXObject form = new PDFormXObject(document);
+            form.setResources(new PDResources());
+            form.setBBox(new PDRectangle(100, 100));
+            try (PDFormContentStream content = new PDFormContentStream(form)) {
+                content.beginText();
+                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8);
+                content.newLineAtOffset(10, 80);
+                content.showText("Hi");
+                content.endText();
+            }
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.drawForm(form);
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "fonts.text_size");
+        assertEquals("Form1", evidence.get("resource_path"));
+        assertDoubleEquals(8.0, evidence.get("effective_size_pt"));
+        assertEquals(2, evidence.get("occurrences"));
+    }
+
+    @Test
     void reportsMissingOutputIntent() throws Exception {
         File pdf = tempDir.resolve("no-output-intent.pdf").toFile();
         try (PDDocument document = new PDDocument()) {

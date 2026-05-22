@@ -28,7 +28,9 @@ import org.apache.pdfbox.pdmodel.graphics.form.PDTransparencyGroup;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.apache.pdfbox.util.Matrix;
+import org.apache.pdfbox.util.Vector;
 
 import java.awt.geom.Point2D;
 import java.io.File;
@@ -150,11 +152,18 @@ public final class PdfBoxAnalyzer {
         private final int pageNumber;
         private final List<Map<String, Object>> evidence;
         private final List<String> resourcePath = new ArrayList<>();
+        private final Map<String, TextSizeGroup> textSizeGroups = new LinkedHashMap<>();
 
         private PageContentCollector(PDPage page, int pageNumber, List<Map<String, Object>> evidence) {
             super(page);
             this.pageNumber = pageNumber;
             this.evidence = evidence;
+        }
+
+        @Override
+        public void processPage(PDPage page) throws IOException {
+            super.processPage(page);
+            flushTextSizeEvidence();
         }
 
         @Override
@@ -194,6 +203,50 @@ public final class PdfBoxAnalyzer {
                 }
             }
             super.processOperator(operator, operands);
+        }
+
+        @Override
+        protected void showGlyph(Matrix textRenderingMatrix, PDFont font, int code, Vector displacement) throws IOException {
+            collectTextSize(textRenderingMatrix, font);
+            super.showGlyph(textRenderingMatrix, font, code, displacement);
+        }
+
+        private void collectTextSize(Matrix textRenderingMatrix, PDFont font) {
+            RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
+            if (!renderingMode.isFill() && !renderingMode.isStroke()) {
+                return;
+            }
+
+            String fontName = font.getName();
+            String subtype = font.getSubType();
+            String path = currentResourcePath();
+            double effectiveSize = round2(Math.abs(textRenderingMatrix.getScalingFactorY()));
+            double horizontalSize = round2(Math.abs(textRenderingMatrix.getScalingFactorX()));
+            String key = pageNumber + "|" + path + "|" + fontName + "|" + subtype + "|" + effectiveSize + "|" + horizontalSize;
+            TextSizeGroup group = textSizeGroups.get(key);
+            if (group == null) {
+                group = new TextSizeGroup(fontName, subtype, path, effectiveSize, horizontalSize);
+                textSizeGroups.put(key, group);
+            }
+            group.occurrences++;
+        }
+
+        private void flushTextSizeEvidence() {
+            for (TextSizeGroup group : textSizeGroups.values()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("check_id", "fonts.text_size");
+                item.put("category", "fonts");
+                item.put("page", pageNumber);
+                if (!group.resourcePath.isEmpty()) {
+                    item.put("resource_path", group.resourcePath);
+                }
+                item.put("font_name", group.fontName);
+                item.put("subtype", group.subtype);
+                item.put("effective_size_pt", group.effectiveSizePt);
+                item.put("horizontal_size_pt", group.horizontalSizePt);
+                item.put("occurrences", group.occurrences);
+                evidence.add(item);
+            }
         }
 
         private void collectObjectBounds(COSName resourceName, String objectType, Map<String, Double> bounds) {
@@ -332,6 +385,17 @@ public final class PdfBoxAnalyzer {
             return String.join("/", segments);
         }
 
+        private String currentResourcePath() {
+            if (resourcePath.isEmpty()) {
+                return "";
+            }
+            return String.join("/", resourcePath);
+        }
+
+        private double round2(double value) {
+            return Math.round(value * 100.0) / 100.0;
+        }
+
         private String colorSpaceFamily(PDColorSpace colorSpace) {
             if (colorSpace instanceof PDDeviceRGB) {
                 return "DeviceRGB";
@@ -418,6 +482,30 @@ public final class PdfBoxAnalyzer {
 
         @Override
         public void shadingFill(COSName shadingName) {
+        }
+
+        private static final class TextSizeGroup {
+            private final String fontName;
+            private final String subtype;
+            private final String resourcePath;
+            private final double effectiveSizePt;
+            private final double horizontalSizePt;
+            private int occurrences;
+
+            private TextSizeGroup(
+                    String fontName,
+                    String subtype,
+                    String resourcePath,
+                    double effectiveSizePt,
+                    double horizontalSizePt
+            ) {
+                this.fontName = fontName;
+                this.subtype = subtype;
+                this.resourcePath = resourcePath;
+                this.effectiveSizePt = effectiveSizePt;
+                this.horizontalSizePt = horizontalSizePt;
+                this.occurrences = 0;
+            }
         }
     }
 }
