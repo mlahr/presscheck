@@ -93,6 +93,34 @@ Run the Java analyzer tests:
 ./gradlew :analyzers:pdfbox:test
 ```
 
+## Inspect Reports
+
+Summarize findings by check:
+
+```bash
+jq -r '
+  .findings
+  | group_by(.check_id)
+  | map({
+      check_id: .[0].check_id,
+      severity: .[0].severity,
+      count: length,
+      pages: ([.[].page] | map(select(. != null)) | unique)
+    })
+' report.json
+```
+
+Compact table:
+
+```bash
+jq -r '
+  .findings
+  | group_by(.check_id)
+  | map([.[0].severity, .[0].check_id, length] | @tsv)
+  | .[]
+' report.json
+```
+
 ## Current Checks
 
 - `document_integrity.ghostscript_processable`
