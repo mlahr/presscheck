@@ -206,6 +206,72 @@ class PdfBoxAnalyzerTest {
     }
 
     @Test
+    void reportsBlankPageContentEvidence() throws Exception {
+        File pdf = tempDir.resolve("blank-page.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "pages.page_content");
+        assertEquals("pages", evidence.get("category"));
+        assertEquals(1, evidence.get("page"));
+        assertEquals(false, evidence.get("has_content_stream"));
+        assertEquals(0, evidence.get("text_glyph_count"));
+        assertEquals(0, evidence.get("image_count"));
+        assertEquals(0, evidence.get("painted_path_count"));
+        assertEquals(0, evidence.get("shading_count"));
+        assertEquals(0, evidence.get("form_xobject_count"));
+        assertEquals(true, evidence.get("is_structurally_blank"));
+    }
+
+    @Test
+    void reportsTextPageAsNonblank() throws Exception {
+        File pdf = tempDir.resolve("text-page.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.beginText();
+                content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                content.newLineAtOffset(72, 720);
+                content.showText("Hi");
+                content.endText();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "pages.page_content");
+        assertEquals(true, evidence.get("has_content_stream"));
+        assertEquals(2, evidence.get("text_glyph_count"));
+        assertEquals(false, evidence.get("is_structurally_blank"));
+    }
+
+    @Test
+    void reportsPaintedPathPageAsNonblank() throws Exception {
+        File pdf = tempDir.resolve("painted-path-page.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.addRect(72, 500, 100, 100);
+                content.fill();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "pages.page_content");
+        assertEquals(1, evidence.get("painted_path_count"));
+        assertEquals(false, evidence.get("is_structurally_blank"));
+    }
+
+    @Test
     void reportsImageEffectiveResolutionAtOneHundredDpi() throws Exception {
         File pdf = writeImagePdf("image-100dpi.pdf", 300, 300, 216, 216);
 
@@ -235,6 +301,10 @@ class PdfBoxAnalyzerTest {
         assertEquals("image", boundsEvidence.get("object_type"));
         assertEquals("Im1", boundsEvidence.get("resource_path"));
         assertBounds(boundsEvidence, 72.0, 500.0, 288.0, 716.0);
+
+        Map<String, Object> pageContent = firstEvidenceFor(result, "pages.page_content");
+        assertEquals(1, pageContent.get("image_count"));
+        assertEquals(false, pageContent.get("is_structurally_blank"));
     }
 
     @Test
@@ -329,6 +399,11 @@ class PdfBoxAnalyzerTest {
         Map<String, Object> imageBounds = firstEvidenceFor(result, "geometry.object_bounds", "Form1/Im1");
         assertEquals("image", imageBounds.get("object_type"));
         assertBounds(imageBounds, 72.0, 500.0, 288.0, 716.0);
+
+        Map<String, Object> pageContent = firstEvidenceFor(result, "pages.page_content");
+        assertEquals(1, pageContent.get("form_xobject_count"));
+        assertEquals(1, pageContent.get("image_count"));
+        assertEquals(false, pageContent.get("is_structurally_blank"));
     }
 
     @Test

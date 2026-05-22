@@ -11,6 +11,9 @@ from pdfdancer_preflight.models import Finding, TargetConfig
 PAGE_BOXES_CHECK = "geometry.page_boxes_present"
 TRIM_SIZE_CHECK = "geometry.trim_size_matches"
 BLEED_MARGIN_CHECK = "geometry.bleed_margin_at_least"
+PAGE_COUNT_CHECK = "pages.count_policy"
+PAGE_PARITY_CHECK = "pages.parity_policy"
+PAGE_SIZE_CONSISTENCY_CHECK = "pages.size_consistency"
 logger = logging.getLogger(__name__)
 
 BOX_KEYS = {
@@ -26,6 +29,9 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         target.check(PAGE_BOXES_CHECK) is None
         and target.check(TRIM_SIZE_CHECK) is None
         and target.check(BLEED_MARGIN_CHECK) is None
+        and target.check(PAGE_COUNT_CHECK) is None
+        and target.check(PAGE_PARITY_CHECK) is None
+        and target.check(PAGE_SIZE_CONSISTENCY_CHECK) is None
     ):
         logger.debug("all geometry checks disabled")
         return []
@@ -62,6 +68,20 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
 
     findings: list[Finding] = []
     logger.info("PDF parsed for geometry checks: pages=%s", len(reader.pages))
+    page_count_check = target.check(PAGE_COUNT_CHECK)
+    if page_count_check is not None:
+        findings.extend(_check_page_count(reader, page_count_check.severity, page_count_check.params))
+
+    page_parity_check = target.check(PAGE_PARITY_CHECK)
+    if page_parity_check is not None:
+        findings.extend(_check_page_parity(reader, page_parity_check.severity, page_parity_check.params))
+
+    size_consistency_check = target.check(PAGE_SIZE_CONSISTENCY_CHECK)
+    if size_consistency_check is not None:
+        findings.extend(
+            _check_page_size_consistency(reader, size_consistency_check.severity, size_consistency_check.params)
+        )
+
     page_boxes_check = target.check(PAGE_BOXES_CHECK)
     if page_boxes_check is not None:
         findings.extend(_check_page_boxes_present(reader, page_boxes_check.severity, page_boxes_check.params))
@@ -76,6 +96,108 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
 
     logger.info("geometry checks completed: findings=%s", len(findings))
     return findings
+
+
+def _check_page_count(reader: PdfReader, severity, params: dict[str, Any]) -> list[Finding]:
+    page_count = len(reader.pages)
+    expected_count = params.get("expected_count")
+    min_count = params.get("min_count")
+    max_count = params.get("max_count")
+
+    violations = {}
+    if isinstance(expected_count, int) and page_count != expected_count:
+        violations["expected_count"] = expected_count
+    if isinstance(min_count, int) and page_count < min_count:
+        violations["min_count"] = min_count
+    if isinstance(max_count, int) and page_count > max_count:
+        violations["max_count"] = max_count
+
+    if not violations:
+        return []
+
+    return [
+        Finding(
+            check_id=PAGE_COUNT_CHECK,
+            category="pages",
+            severity=severity,
+            message="PDF page count does not match target policy.",
+            analyzer="geometry",
+            source_tool="pypdf",
+            observed={"page_count": page_count, "violations": violations},
+            threshold={key: value for key, value in {
+                "expected_count": expected_count,
+                "min_count": min_count,
+                "max_count": max_count,
+            }.items() if isinstance(value, int)},
+        )
+    ]
+
+
+def _check_page_parity(reader: PdfReader, severity, params: dict[str, Any]) -> list[Finding]:
+    required_parity = params.get("required_parity")
+    if required_parity not in {"even", "odd"}:
+        raise ValueError(f"check '{PAGE_PARITY_CHECK}' requires parameter 'required_parity' to be 'even' or 'odd'")
+
+    page_count = len(reader.pages)
+    actual_parity = "even" if page_count % 2 == 0 else "odd"
+    if actual_parity == required_parity:
+        return []
+
+    return [
+        Finding(
+            check_id=PAGE_PARITY_CHECK,
+            category="pages",
+            severity=severity,
+            message="PDF page count parity does not match target policy.",
+            analyzer="geometry",
+            source_tool="pypdf",
+            observed={"page_count": page_count, "parity": actual_parity},
+            threshold={"required_parity": required_parity},
+        )
+    ]
+
+
+def _check_page_size_consistency(reader: PdfReader, severity, params: dict[str, Any]) -> list[Finding]:
+    box_name = str(params.get("box", "MediaBox"))
+    pdf_key = BOX_KEYS.get(box_name)
+    if pdf_key is None:
+        raise ValueError(f"check '{PAGE_SIZE_CONSISTENCY_CHECK}' has unsupported box '{box_name}'")
+    tolerance = float(params.get("tolerance_pt", 0))
+
+    groups: list[dict[str, Any]] = []
+    for page_index, page in enumerate(reader.pages, start=1):
+        box = page.get(pdf_key)
+        if box is None:
+            continue
+        size = {
+            "width_pt": float(box[2]) - float(box[0]),
+            "height_pt": float(box[3]) - float(box[1]),
+        }
+        for group in groups:
+            if (
+                abs(group["width_pt"] - size["width_pt"]) <= tolerance
+                and abs(group["height_pt"] - size["height_pt"]) <= tolerance
+            ):
+                group["pages"].append(page_index)
+                break
+        else:
+            groups.append({"width_pt": size["width_pt"], "height_pt": size["height_pt"], "pages": [page_index]})
+
+    if len(groups) <= 1:
+        return []
+
+    return [
+        Finding(
+            check_id=PAGE_SIZE_CONSISTENCY_CHECK,
+            category="pages",
+            severity=severity,
+            message=f"PDF pages use inconsistent {box_name} sizes.",
+            analyzer="geometry",
+            source_tool="pypdf",
+            observed={"box": box_name, "size_groups": groups},
+            threshold={"box": box_name, "tolerance_pt": tolerance},
+        )
+    ]
 
 
 def _check_page_boxes_present(reader: PdfReader, severity, params: dict[str, Any]) -> list[Finding]:
@@ -181,7 +303,14 @@ def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:
 
 
 def _fallback_severity(target: TargetConfig):
-    for check_id in (PAGE_BOXES_CHECK, TRIM_SIZE_CHECK, BLEED_MARGIN_CHECK):
+    for check_id in (
+        PAGE_COUNT_CHECK,
+        PAGE_PARITY_CHECK,
+        PAGE_SIZE_CONSISTENCY_CHECK,
+        PAGE_BOXES_CHECK,
+        TRIM_SIZE_CHECK,
+        BLEED_MARGIN_CHECK,
+    ):
         check = target.check(check_id)
         if check is not None:
             return check.severity

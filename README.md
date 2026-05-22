@@ -150,6 +150,10 @@ jq '.findings[]' report.json
 ## Current Checks
 
 - `document_integrity.ghostscript_processable`
+- `pages.count_policy`: target-driven page count limits
+- `pages.parity_policy`: even/odd page count policy
+- `pages.size_consistency`: mixed page sizes by configured page box
+- `pages.blank_policy`: structurally blank pages from PDFBox content evidence
 - `fonts.non_embedded`: grouped by font name and subtype
 - `fonts.minimum_text_size`: grouped by font and effective rendered text size
 - `images.low_effective_resolution`: page and Form XObject image placements
@@ -190,6 +194,29 @@ checks:
   document_integrity.ghostscript_processable:
     enabled: true
     severity: error
+    timeout_seconds: 60
+  pages.count_policy:
+    enabled: true
+    severity: error
+    min_count: 1
+    timeout_seconds: 60
+  pages.parity_policy:
+    enabled: true
+    severity: warning
+    required_parity: even
+    timeout_seconds: 60
+  pages.size_consistency:
+    enabled: true
+    severity: warning
+    box: TrimBox
+    tolerance_pt: 0.5
+    timeout_seconds: 60
+  pages.blank_policy:
+    enabled: true
+    severity: warning
+    allowed_pages: []
+    allow_trailing_blank: false
+    max_blank_pages: 0
     timeout_seconds: 60
   fonts.non_embedded:
     enabled: true
@@ -348,5 +375,6 @@ Severity levels:
 - Structural bleed checks compare BleedBox margins against TrimBox; they do not verify that artwork visually fills the bleed area.
 - Object bounds checks currently cover placed images and Form XObjects, not text, vector paths, annotations, patterns, or raster-derived artwork.
 - Interactive checks do not validate external URLs or internal destinations, and JavaScript source is not included in reports.
+- Blank-page detection is structural, not rendered visual analysis; white-on-white content still counts as nonblank.
 - `summary.color.image_color_space_findings_by_family` counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

@@ -4,6 +4,29 @@ checks:
     enabled: true
     severity: error
     timeout_seconds: 60
+  pages.count_policy:
+    enabled: true
+    severity: error
+    min_count: 1
+    timeout_seconds: 60
+  pages.parity_policy:
+    enabled: true
+    severity: warning
+    required_parity: even
+    timeout_seconds: 60
+  pages.size_consistency:
+    enabled: true
+    severity: warning
+    box: TrimBox
+    tolerance_pt: 0.5
+    timeout_seconds: 60
+  pages.blank_policy:
+    enabled: true
+    severity: warning
+    allowed_pages: []
+    allow_trailing_blank: false
+    max_blank_pages: 0
+    timeout_seconds: 60
   fonts.non_embedded:
     enabled: true
     severity: error

@@ -31,6 +31,7 @@ ANNOTATION_BOUNDS_CHECK = "interactive.annotation_bounds_within_box"
 JAVASCRIPT_POLICY_CHECK = "interactive.javascript_policy"
 EMBEDDED_FILES_POLICY_CHECK = "interactive.embedded_files_policy"
 FORM_POLICY_CHECK = "interactive.form_policy"
+BLANK_PAGE_POLICY_CHECK = "pages.blank_policy"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 TEXT_SIZE_EVIDENCE = "fonts.text_size"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
@@ -42,6 +43,7 @@ ANNOTATIONS_EVIDENCE = "interactive.annotations"
 DOCUMENT_ACTIONS_EVIDENCE = "interactive.document_actions"
 EMBEDDED_FILES_EVIDENCE = "interactive.embedded_files"
 FORMS_EVIDENCE = "interactive.forms"
+PAGE_CONTENT_EVIDENCE = "pages.page_content"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
 BOX_KEYS = {
@@ -76,6 +78,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(JAVASCRIPT_POLICY_CHECK),
             target.check(EMBEDDED_FILES_POLICY_CHECK),
             target.check(FORM_POLICY_CHECK),
+            target.check(BLANK_PAGE_POLICY_CHECK),
         )
         if check is not None
     ]
@@ -236,11 +239,19 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if form_check is not None:
         findings.extend(_form_policy_findings(forms_evidence, form_check.severity))
 
+    page_content_evidence = [item for item in evidence if _is_page_content_evidence(item)]
+    blank_page_check = target.check(BLANK_PAGE_POLICY_CHECK)
+    if blank_page_check is not None:
+        findings.extend(
+            _blank_page_policy_findings(page_content_evidence, blank_page_check.severity, blank_page_check.params)
+        )
+
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
         "text_size_evidence=%s output_intent_evidence=%s transparency_evidence=%s "
         "object_bounds_evidence=%s special_color_evidence=%s overprint_evidence=%s "
-        "annotations_evidence=%s document_actions_evidence=%s embedded_files_evidence=%s forms_evidence=%s findings=%s",
+        "annotations_evidence=%s document_actions_evidence=%s embedded_files_evidence=%s "
+        "forms_evidence=%s page_content_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
@@ -254,6 +265,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         len(document_actions_evidence),
         len(embedded_files_evidence),
         len(forms_evidence),
+        len(page_content_evidence),
         len(findings),
     )
     return findings
@@ -312,6 +324,10 @@ def _is_embedded_files_evidence(item: Any) -> bool:
 
 def _is_forms_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == FORMS_EVIDENCE
+
+
+def _is_page_content_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == PAGE_CONTENT_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -1056,6 +1072,54 @@ def _form_policy_findings(evidence: list[dict[str, Any]], severity: Severity) ->
     return findings
 
 
+def _blank_page_policy_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    blank_pages = sorted(
+        item["page"]
+        for item in evidence
+        if item.get("is_structurally_blank") is True and isinstance(item.get("page"), int)
+    )
+    if not blank_pages:
+        return []
+
+    allowed_pages = set(_int_list(params.get("allowed_pages")))
+    effective_blank_pages = [page for page in blank_pages if page not in allowed_pages]
+
+    if params.get("allow_trailing_blank") is True and effective_blank_pages:
+        last_page = max(item["page"] for item in evidence if isinstance(item.get("page"), int))
+        if effective_blank_pages[-1] == last_page:
+            effective_blank_pages = effective_blank_pages[:-1]
+
+    max_blank_pages = params.get("max_blank_pages")
+    if isinstance(max_blank_pages, int) and len(effective_blank_pages) <= max_blank_pages:
+        return []
+    if not effective_blank_pages:
+        return []
+
+    observed = {
+        "blank_pages": effective_blank_pages,
+        "blank_page_count": len(effective_blank_pages),
+        "all_blank_pages": blank_pages,
+    }
+    return [
+        Finding(
+            check_id=BLANK_PAGE_POLICY_CHECK,
+            category="pages",
+            severity=severity,
+            message="PDF contains blank pages not allowed by the target policy.",
+            analyzer="pdfbox",
+            source_tool="pdfbox",
+            observed=observed,
+            threshold={
+                "allowed_pages": sorted(allowed_pages),
+                "allow_trailing_blank": params.get("allow_trailing_blank") is True,
+                "max_blank_pages": max_blank_pages,
+            },
+        )
+    ]
+
+
 def _read_page_boxes(pdf_path: Path, pdf_box_key: str) -> dict[int, dict[str, float]]:
     try:
         reader = PdfReader(str(pdf_path))
@@ -1154,6 +1218,12 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _int_list(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, int)]
 
 
 def _occurrences(item: dict[str, Any]) -> int:

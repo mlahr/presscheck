@@ -305,11 +305,18 @@ public final class PdfBoxAnalyzer {
         private final Map<String, TextSizeGroup> textSizeGroups = new LinkedHashMap<>();
         private final Map<String, SpecialColorGroup> specialColorGroups = new LinkedHashMap<>();
         private final Map<String, OverprintGroup> overprintGroups = new LinkedHashMap<>();
+        private boolean hasContentStream;
+        private int textGlyphCount;
+        private int imageCount;
+        private int paintedPathCount;
+        private int shadingCount;
+        private int formXObjectCount;
 
         private PageContentCollector(PDPage page, int pageNumber, List<Map<String, Object>> evidence) {
             super(page);
             this.pageNumber = pageNumber;
             this.evidence = evidence;
+            this.hasContentStream = page.hasContents();
         }
 
         @Override
@@ -318,6 +325,7 @@ public final class PdfBoxAnalyzer {
             flushTextSizeEvidence();
             flushSpecialColorEvidence();
             flushOverprintEvidence();
+            flushPageContentEvidence();
         }
 
         @Override
@@ -337,6 +345,7 @@ public final class PdfBoxAnalyzer {
                 if (resources != null) {
                     PDXObject xObject = resources.getXObject(resourceName);
                     if (xObject instanceof PDImageXObject image) {
+                        imageCount++;
                         collectObjectBounds(resourceName, "image", imageBounds());
                         collectImage(resourceName, image);
                         return;
@@ -345,6 +354,7 @@ public final class PdfBoxAnalyzer {
                         collectTransparencyGroup(resourceName);
                     }
                     if (xObject instanceof PDFormXObject form) {
+                        formXObjectCount++;
                         collectObjectBounds(resourceName, "form", formBounds(form));
                         resourcePath.add(resourceName.getName());
                         try {
@@ -361,6 +371,7 @@ public final class PdfBoxAnalyzer {
 
         @Override
         protected void showGlyph(Matrix textRenderingMatrix, PDFont font, int code, Vector displacement) throws IOException {
+            textGlyphCount++;
             collectTextSize(textRenderingMatrix, font);
             RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
             if (renderingMode.isFill()) {
@@ -444,6 +455,29 @@ public final class PdfBoxAnalyzer {
                 item.put("occurrences", group.occurrences);
                 evidence.add(item);
             }
+        }
+
+        private void flushPageContentEvidence() {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("check_id", "pages.page_content");
+            item.put("category", "pages");
+            item.put("page", pageNumber);
+            item.put("has_content_stream", hasContentStream);
+            item.put("text_glyph_count", textGlyphCount);
+            item.put("image_count", imageCount);
+            item.put("painted_path_count", paintedPathCount);
+            item.put("shading_count", shadingCount);
+            item.put("form_xobject_count", formXObjectCount);
+            item.put("is_structurally_blank", isStructurallyBlank());
+            evidence.add(item);
+        }
+
+        private boolean isStructurallyBlank() {
+            return textGlyphCount == 0
+                    && imageCount == 0
+                    && paintedPathCount == 0
+                    && shadingCount == 0
+                    && formXObjectCount == 0;
         }
 
         private void collectObjectBounds(COSName resourceName, String objectType, Map<String, Double> bounds) {
@@ -762,22 +796,26 @@ public final class PdfBoxAnalyzer {
 
         @Override
         public void strokePath() {
+            paintedPathCount++;
             collectPaintState("path_stroke", true);
         }
 
         @Override
         public void fillPath(int windingRule) {
+            paintedPathCount++;
             collectPaintState("path_fill", false);
         }
 
         @Override
         public void fillAndStrokePath(int windingRule) {
+            paintedPathCount++;
             collectPaintState("path_fill", false);
             collectPaintState("path_stroke", true);
         }
 
         @Override
         public void shadingFill(COSName shadingName) {
+            shadingCount++;
         }
 
         private static final class TextSizeGroup {

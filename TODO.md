@@ -21,15 +21,20 @@ Still missing:
 
 - Multimedia-specific detection beyond annotation subtype/action evidence
 
-## Remaining Major Missing Checks
-
 ### Page Count and Page Sequence
+
+Implemented:
 
 - Expected page count
 - Blank pages
 - Odd/even page rules
 - All pages same size or allowed size variation
+
+Still missing:
+
 - Cover vs interior page geometry
+
+## Remaining Major Missing Checks
 
 ### Bleed Content Quality
 
@@ -109,8 +114,7 @@ Mostly ebook-focused.
 
 ## Suggested Priority
 
-1. Page sequence, page count, and blank pages
-2. PDF/X, PDF version, and standards metadata
-3. Cover-specific checks
-4. Safe-area and bleed-content analysis
-5. Deeper color checks such as TAC and rich black
+1. PDF/X, PDF version, and standards metadata
+2. Cover-specific checks
+3. Safe-area and bleed-content analysis
+4. Deeper color checks such as TAC and rich black

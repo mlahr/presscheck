@@ -29,6 +29,12 @@ def _target() -> TargetConfig:
                 severity=Severity.error,
                 params={"margin_pt": 9, "tolerance_pt": 0.5},
             ),
+            "pages.count_policy": CheckConfig(
+                check_id="pages.count_policy",
+                enabled=True,
+                severity=Severity.error,
+                params={"min_count": 1},
+            ),
         },
     )
 
@@ -109,3 +115,82 @@ def test_geometry_reports_invalid_pdf(tmp_path: Path) -> None:
     findings = analyze(pdf, _target())
 
     assert findings[0].check_id == "document_integrity.pdf_parseable"
+
+
+def test_geometry_reports_page_count_policy_violation(tmp_path: Path) -> None:
+    pdf = tmp_path / "count.pdf"
+    _write_pdf(pdf)
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "pages.count_policy": CheckConfig(
+                check_id="pages.count_policy",
+                enabled=True,
+                severity=Severity.error,
+                params={"expected_count": 2, "min_count": 2, "max_count": 2},
+            )
+        },
+    )
+
+    findings = analyze(pdf, target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "pages.count_policy"
+    assert findings[0].observed == {
+        "page_count": 1,
+        "violations": {"expected_count": 2, "min_count": 2},
+    }
+
+
+def test_geometry_reports_page_parity_violation(tmp_path: Path) -> None:
+    pdf = tmp_path / "parity.pdf"
+    _write_pdf(pdf)
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "pages.parity_policy": CheckConfig(
+                check_id="pages.parity_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"required_parity": "even"},
+            )
+        },
+    )
+
+    findings = analyze(pdf, target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "pages.parity_policy"
+    assert findings[0].observed == {"page_count": 1, "parity": "odd"}
+
+
+def test_geometry_reports_mixed_page_sizes(tmp_path: Path) -> None:
+    pdf = tmp_path / "mixed-size.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.add_blank_page(width=120, height=100)
+    with pdf.open("wb") as file:
+        writer.write(file)
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "pages.size_consistency": CheckConfig(
+                check_id="pages.size_consistency",
+                enabled=True,
+                severity=Severity.warning,
+                params={"box": "MediaBox", "tolerance_pt": 0.5},
+            )
+        },
+    )
+
+    findings = analyze(pdf, target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "pages.size_consistency"
+    assert findings[0].observed == {
+        "box": "MediaBox",
+        "size_groups": [
+            {"width_pt": 100.0, "height_pt": 100.0, "pages": [1]},
+            {"width_pt": 120.0, "height_pt": 100.0, "pages": [2]},
+        ],
+    }

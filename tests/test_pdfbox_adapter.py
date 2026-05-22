@@ -1779,3 +1779,163 @@ def test_pdfbox_adapter_maps_javascript_embedded_files_and_forms(tmp_path: Path,
         "signatures_exist": False,
         "append_only": False,
     }
+
+
+def test_pdfbox_adapter_maps_blank_page_policy(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 3},
+  "evidence": [
+    {
+      "check_id": "pages.page_content",
+      "category": "pages",
+      "page": 1,
+      "has_content_stream": true,
+      "text_glyph_count": 10,
+      "image_count": 0,
+      "painted_path_count": 0,
+      "shading_count": 0,
+      "form_xobject_count": 0,
+      "is_structurally_blank": false
+    },
+    {
+      "check_id": "pages.page_content",
+      "category": "pages",
+      "page": 2,
+      "has_content_stream": false,
+      "text_glyph_count": 0,
+      "image_count": 0,
+      "painted_path_count": 0,
+      "shading_count": 0,
+      "form_xobject_count": 0,
+      "is_structurally_blank": true
+    },
+    {
+      "check_id": "pages.page_content",
+      "category": "pages",
+      "page": 3,
+      "has_content_stream": false,
+      "text_glyph_count": 0,
+      "image_count": 0,
+      "painted_path_count": 0,
+      "shading_count": 0,
+      "form_xobject_count": 0,
+      "is_structurally_blank": true
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "pages.blank_policy": CheckConfig(
+                check_id="pages.blank_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"allowed_pages": [2], "allow_trailing_blank": False, "max_blank_pages": 0},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "pages.blank_policy"
+    assert findings[0].category == "pages"
+    assert findings[0].severity == Severity.warning
+    assert findings[0].observed == {
+        "blank_pages": [3],
+        "blank_page_count": 1,
+        "all_blank_pages": [2, 3],
+    }
+    assert findings[0].threshold == {
+        "allowed_pages": [2],
+        "allow_trailing_blank": False,
+        "max_blank_pages": 0,
+    }
+
+
+def test_pdfbox_adapter_allows_trailing_blank_page(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 2},
+  "evidence": [
+    {"check_id": "pages.page_content", "category": "pages", "page": 1, "is_structurally_blank": false},
+    {"check_id": "pages.page_content", "category": "pages", "page": 2, "is_structurally_blank": true}
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "pages.blank_policy": CheckConfig(
+                check_id="pages.blank_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"allowed_pages": [], "allow_trailing_blank": True, "max_blank_pages": 0},
+            )
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_allows_blank_pages_up_to_limit(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 2},
+  "evidence": [
+    {"check_id": "pages.page_content", "category": "pages", "page": 1, "is_structurally_blank": false},
+    {"check_id": "pages.page_content", "category": "pages", "page": 2, "is_structurally_blank": true}
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "pages.blank_policy": CheckConfig(
+                check_id="pages.blank_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"allowed_pages": [], "allow_trailing_blank": False, "max_blank_pages": 1},
+            )
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
