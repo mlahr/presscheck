@@ -154,6 +154,7 @@ jq '.findings[]' report.json
 - `images.low_effective_resolution`: direct image placements only
 - `color.image_color_space_policy`: target-driven policy for direct image placement color spaces
 - `color.output_intent_required`: target-driven document-level OutputIntent requirement
+- `transparency.live_transparency_policy`: target-driven policy for applied live transparency features
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
 
@@ -202,6 +203,16 @@ checks:
     enabled: true
     severity: error
     timeout_seconds: 60
+  transparency.live_transparency_policy:
+    enabled: true
+    severity: warning
+    severity_by_feature:
+      stroking_alpha: warning
+      non_stroking_alpha: warning
+      soft_mask: warning
+      blend_mode: warning
+      transparency_group: warning
+    timeout_seconds: 60
   geometry.page_boxes_present:
     enabled: true
     severity: error
@@ -232,5 +243,6 @@ Severity levels:
 - Image effective resolution checks currently cover direct image placements only, not images nested inside Form XObjects.
 - Image color-space policy is target-dependent and currently covers direct image placements only.
 - Print target requires an OutputIntent; ebook target disables that requirement.
+- Transparency policy checks currently cover applied graphics states and directly used transparency-group XObjects.
 - `summary.color.image_color_space_findings_by_family` counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

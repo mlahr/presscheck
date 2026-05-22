@@ -12,6 +12,7 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceCMYK;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
@@ -21,8 +22,10 @@ import org.apache.pdfbox.pdmodel.graphics.color.PDICCBased;
 import org.apache.pdfbox.pdmodel.graphics.color.PDIndexed;
 import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
 import org.apache.pdfbox.pdmodel.graphics.color.PDSeparation;
+import org.apache.pdfbox.pdmodel.graphics.form.PDTransparencyGroup;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 import org.apache.pdfbox.util.Matrix;
 
 import java.awt.geom.Point2D;
@@ -70,7 +73,7 @@ public final class PdfBoxAnalyzer {
             for (PDPage page : document.getPages()) {
                 pageNumber++;
                 collectPageFontEvidence(page, pageNumber, evidence);
-                collectPageImageEvidence(page, pageNumber, evidence);
+                collectPageContentEvidence(page, pageNumber, evidence);
             }
 
             Map<String, Object> metadata = new LinkedHashMap<>();
@@ -132,8 +135,8 @@ public final class PdfBoxAnalyzer {
         evidence.add(item);
     }
 
-    private static void collectPageImageEvidence(PDPage page, int pageNumber, List<Map<String, Object>> evidence) throws IOException {
-        new ImagePlacementCollector(page, pageNumber, evidence).processPage(page);
+    private static void collectPageContentEvidence(PDPage page, int pageNumber, List<Map<String, Object>> evidence) throws IOException {
+        new PageContentCollector(page, pageNumber, evidence).processPage(page);
     }
 
     private static void emit(Map<String, Object> payload) throws Exception {
@@ -141,11 +144,11 @@ public final class PdfBoxAnalyzer {
         System.out.println();
     }
 
-    private static final class ImagePlacementCollector extends PDFGraphicsStreamEngine {
+    private static final class PageContentCollector extends PDFGraphicsStreamEngine {
         private final int pageNumber;
         private final List<Map<String, Object>> evidence;
 
-        private ImagePlacementCollector(PDPage page, int pageNumber, List<Map<String, Object>> evidence) {
+        private PageContentCollector(PDPage page, int pageNumber, List<Map<String, Object>> evidence) {
             super(page);
             this.pageNumber = pageNumber;
             this.evidence = evidence;
@@ -153,14 +156,81 @@ public final class PdfBoxAnalyzer {
 
         @Override
         protected void processOperator(Operator operator, List<COSBase> operands) throws IOException {
+            if ("gs".equals(operator.getName()) && !operands.isEmpty() && operands.get(0) instanceof COSName resourceName) {
+                PDResources resources = getResources();
+                if (resources != null) {
+                    PDExtendedGraphicsState graphicsState = resources.getExtGState(resourceName);
+                    if (graphicsState != null) {
+                        collectTransparencyState(resourceName, graphicsState);
+                    }
+                }
+            }
+
             if ("Do".equals(operator.getName()) && !operands.isEmpty() && operands.get(0) instanceof COSName resourceName) {
-                PDXObject xObject = getResources().getXObject(resourceName);
-                if (xObject instanceof PDImageXObject image) {
-                    collectImage(resourceName, image);
-                    return;
+                PDResources resources = getResources();
+                if (resources != null) {
+                    PDXObject xObject = resources.getXObject(resourceName);
+                    if (xObject instanceof PDImageXObject image) {
+                        collectImage(resourceName, image);
+                        return;
+                    }
+                    if (xObject instanceof PDTransparencyGroup) {
+                        collectTransparencyGroup(resourceName);
+                    }
                 }
             }
             super.processOperator(operator, operands);
+        }
+
+        private void collectTransparencyState(COSName resourceName, PDExtendedGraphicsState graphicsState) {
+            List<String> features = new ArrayList<>();
+            Map<String, Object> item = transparencyEvidence(resourceName);
+
+            Float strokingAlpha = graphicsState.getStrokingAlphaConstant();
+            if (strokingAlpha != null && strokingAlpha < 1.0f) {
+                features.add("stroking_alpha");
+                item.put("stroking_alpha", strokingAlpha);
+            }
+
+            Float nonStrokingAlpha = graphicsState.getNonStrokingAlphaConstant();
+            if (nonStrokingAlpha != null && nonStrokingAlpha < 1.0f) {
+                features.add("non_stroking_alpha");
+                item.put("non_stroking_alpha", nonStrokingAlpha);
+            }
+
+            if (graphicsState.getSoftMask() != null) {
+                features.add("soft_mask");
+                item.put("soft_mask", true);
+            }
+
+            if (graphicsState.getCOSObject().containsKey(COSName.BM)) {
+                BlendMode blendMode = graphicsState.getBlendMode();
+                if (blendMode != null && !COSName.NORMAL.equals(blendMode.getCOSName())) {
+                    features.add("blend_mode");
+                    item.put("blend_mode", blendMode.getCOSName().getName());
+                }
+            }
+
+            if (!features.isEmpty()) {
+                item.put("features", features);
+                evidence.add(item);
+            }
+        }
+
+        private void collectTransparencyGroup(COSName resourceName) {
+            Map<String, Object> item = transparencyEvidence(resourceName);
+            item.put("features", List.of("transparency_group"));
+            item.put("transparency_group", true);
+            evidence.add(item);
+        }
+
+        private Map<String, Object> transparencyEvidence(COSName resourceName) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("check_id", "transparency.features");
+            item.put("category", "transparency");
+            item.put("page", pageNumber);
+            item.put("resource_name", resourceName.getName());
+            return item;
         }
 
         private void collectImage(COSName resourceName, PDImageXObject image) throws IOException {

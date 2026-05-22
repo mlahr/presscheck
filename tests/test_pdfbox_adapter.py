@@ -36,6 +36,20 @@ def _target() -> TargetConfig:
                 severity=Severity.error,
                 params={},
             ),
+            "transparency.live_transparency_policy": CheckConfig(
+                check_id="transparency.live_transparency_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={
+                    "severity_by_feature": {
+                        "stroking_alpha": "warning",
+                        "non_stroking_alpha": "warning",
+                        "soft_mask": "error",
+                        "blend_mode": "warning",
+                        "transparency_group": "warning",
+                    }
+                },
+            ),
         },
     )
 
@@ -462,3 +476,163 @@ def test_pdfbox_adapter_allows_present_output_intent(tmp_path: Path, monkeypatch
     )
 
     assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_maps_transparency_policy_evidence(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "transparency.features",
+      "category": "transparency",
+      "page": 1,
+      "resource_name": "gs1",
+      "features": ["non_stroking_alpha", "blend_mode"],
+      "non_stroking_alpha": 0.5,
+      "blend_mode": "Multiply"
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "transparency.live_transparency_policy": CheckConfig(
+                check_id="transparency.live_transparency_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={
+                    "severity_by_feature": {
+                        "non_stroking_alpha": "warning",
+                        "blend_mode": "error",
+                    }
+                },
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "transparency.live_transparency_policy"
+    assert findings[0].category == "transparency"
+    assert findings[0].severity == Severity.error
+    assert findings[0].page == 1
+    assert findings[0].object_ref == "gs1"
+    assert findings[0].observed == {
+        "features": ["non_stroking_alpha", "blend_mode"],
+        "resource_name": "gs1",
+        "non_stroking_alpha": 0.5,
+        "blend_mode": "Multiply",
+    }
+    assert findings[0].threshold == {
+        "severity_by_feature": {
+            "non_stroking_alpha": "warning",
+            "blend_mode": "error",
+        }
+    }
+
+
+def test_pdfbox_adapter_allows_null_or_omitted_transparency_features(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "transparency.features",
+      "category": "transparency",
+      "page": 1,
+      "resource_name": "gs1",
+      "features": ["non_stroking_alpha", "blend_mode"],
+      "non_stroking_alpha": 0.5,
+      "blend_mode": "Multiply"
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "transparency.live_transparency_policy": CheckConfig(
+                check_id="transparency.live_transparency_policy",
+                enabled=True,
+                severity=Severity.info,
+                params={"severity_by_feature": {"non_stroking_alpha": None}},
+            )
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_rejects_invalid_transparency_policy_severity(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "transparency.features",
+      "category": "transparency",
+      "page": 1,
+      "resource_name": "gs1",
+      "features": ["blend_mode"],
+      "blend_mode": "Multiply"
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "transparency.live_transparency_policy": CheckConfig(
+                check_id="transparency.live_transparency_policy",
+                enabled=True,
+                severity=Severity.info,
+                params={"severity_by_feature": {"blend_mode": "fatal"}},
+            )
+        },
+    )
+
+    try:
+        pdfbox.analyze(tmp_path / "input.pdf", target)
+    except ValueError as exc:
+        assert "invalid severity" in str(exc)
+    else:
+        raise AssertionError("expected invalid severity to raise ValueError")

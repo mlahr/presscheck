@@ -13,8 +13,10 @@ NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
 LOW_EFFECTIVE_RESOLUTION_CHECK = "images.low_effective_resolution"
 IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
 OUTPUT_INTENT_REQUIRED_CHECK = "color.output_intent_required"
+LIVE_TRANSPARENCY_POLICY_CHECK = "transparency.live_transparency_policy"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
+TRANSPARENCY_FEATURES_EVIDENCE = "transparency.features"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
 logger = logging.getLogger(__name__)
@@ -28,6 +30,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(LOW_EFFECTIVE_RESOLUTION_CHECK),
             target.check(IMAGE_COLOR_SPACE_POLICY_CHECK),
             target.check(OUTPUT_INTENT_REQUIRED_CHECK),
+            target.check(LIVE_TRANSPARENCY_POLICY_CHECK),
         )
         if check is not None
     ]
@@ -97,13 +100,19 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if output_intent_check is not None:
         findings.extend(_output_intent_required_findings(output_intent_evidence, output_intent_check.severity))
 
+    transparency_check = target.check(LIVE_TRANSPARENCY_POLICY_CHECK)
+    transparency_evidence = [item for item in evidence if _is_transparency_features_evidence(item)]
+    if transparency_check is not None:
+        findings.extend(_live_transparency_policy_findings(transparency_evidence, transparency_check.params))
+
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
-        "output_intent_evidence=%s findings=%s",
+        "output_intent_evidence=%s transparency_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
         len(output_intent_evidence),
+        len(transparency_evidence),
         len(findings),
     )
     return findings
@@ -126,6 +135,10 @@ def _is_effective_resolution_evidence(item: Any) -> bool:
 
 def _is_output_intents_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == OUTPUT_INTENTS_EVIDENCE
+
+
+def _is_transparency_features_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == TRANSPARENCY_FEATURES_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -276,6 +289,72 @@ def _output_intent_required_findings(evidence: list[dict[str, Any]], severity: S
             observed={"count": 0},
         )
     ]
+
+
+def _live_transparency_policy_findings(evidence: list[dict[str, Any]], params: dict[str, Any]) -> list[Finding]:
+    severity_by_feature = params.get("severity_by_feature")
+    if not isinstance(severity_by_feature, dict):
+        raise ValueError(
+            f"check '{LIVE_TRANSPARENCY_POLICY_CHECK}' requires mapping parameter 'severity_by_feature'"
+        )
+
+    findings = []
+    for item in evidence:
+        features = item.get("features")
+        if not isinstance(features, list):
+            continue
+
+        configured_features: list[str] = []
+        configured_severities: dict[str, Severity] = {}
+        for feature in features:
+            if not isinstance(feature, str):
+                continue
+            severity_raw = severity_by_feature.get(feature)
+            if severity_raw is None:
+                continue
+            if not isinstance(severity_raw, str):
+                raise ValueError(
+                    f"check '{LIVE_TRANSPARENCY_POLICY_CHECK}' severity for feature '{feature}' "
+                    "must be null or a string"
+                )
+            configured_features.append(feature)
+            configured_severities[feature] = Severity.parse(severity_raw)
+
+        if not configured_features:
+            continue
+
+        severity = max(configured_severities.values())
+        page = item.get("page")
+        resource_name = item.get("resource_name")
+        observed = {
+            "features": configured_features,
+            "resource_name": resource_name,
+        }
+        for feature in configured_features:
+            if feature in item:
+                observed[feature] = item.get(feature)
+
+        findings.append(
+            Finding(
+                check_id=LIVE_TRANSPARENCY_POLICY_CHECK,
+                category="transparency",
+                severity=severity,
+                message=f"PDF uses live transparency features: {', '.join(configured_features)}.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=str(resource_name) if resource_name is not None else None,
+                observed=observed,
+                threshold={
+                    "severity_by_feature": {
+                        feature: configured_severities[feature].name for feature in configured_features
+                    }
+                },
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["features"]))
+    return findings
 
 
 def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:

@@ -3,9 +3,12 @@ package com.pdfdancer.preflight.pdfbox;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
 import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
+import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.junit.jupiter.api.Test;
@@ -128,6 +131,80 @@ class PdfBoxAnalyzerTest {
         assertDoubleEquals(300.0, evidence.get("min_dpi"));
     }
 
+    @Test
+    void reportsAppliedNonStrokingAlpha() throws Exception {
+        File pdf = tempDir.resolve("transparent-fill.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDExtendedGraphicsState graphicsState = new PDExtendedGraphicsState();
+            graphicsState.setNonStrokingAlphaConstant(0.5f);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.setGraphicsStateParameters(graphicsState);
+                content.addRect(72, 500, 100, 100);
+                content.fill();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "transparency.features");
+        assertEquals("transparency", evidence.get("category"));
+        assertEquals(1, evidence.get("page"));
+        assertEquals(List.of("non_stroking_alpha"), evidence.get("features"));
+        assertDoubleEquals(0.5, evidence.get("non_stroking_alpha"));
+    }
+
+    @Test
+    void reportsAppliedBlendMode() throws Exception {
+        File pdf = tempDir.resolve("multiply-blend.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDExtendedGraphicsState graphicsState = new PDExtendedGraphicsState();
+            graphicsState.setBlendMode(BlendMode.MULTIPLY);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.setGraphicsStateParameters(graphicsState);
+                content.addRect(72, 500, 100, 100);
+                content.fill();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "transparency.features");
+        assertEquals(List.of("blend_mode"), evidence.get("features"));
+        assertEquals("Multiply", evidence.get("blend_mode"));
+    }
+
+    @Test
+    void ignoresUnusedTransparencyGraphicsState() throws Exception {
+        File pdf = tempDir.resolve("unused-transparent-state.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            page.setResources(new PDResources());
+
+            PDExtendedGraphicsState graphicsState = new PDExtendedGraphicsState();
+            graphicsState.setNonStrokingAlphaConstant(0.5f);
+            page.getResources().add(graphicsState);
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.addRect(72, 500, 100, 100);
+                content.fill();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        assertFalse(hasEvidenceFor(result, "transparency.features"));
+    }
+
     private File writeImagePdf(String name, int pixelWidth, int pixelHeight, float drawnWidthPt, float drawnHeightPt) throws Exception {
         File pdf = tempDir.resolve(name).toFile();
         BufferedImage bufferedImage = new BufferedImage(pixelWidth, pixelHeight, BufferedImage.TYPE_INT_RGB);
@@ -156,6 +233,12 @@ class PdfBoxAnalyzerTest {
                 .filter(item -> checkId.equals(item.get("check_id")))
                 .findFirst()
                 .orElseThrow();
+    }
+
+    private boolean hasEvidenceFor(Map<String, Object> result, String checkId) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> evidence = (List<Map<String, Object>>) result.get("evidence");
+        return evidence.stream().anyMatch(item -> checkId.equals(item.get("check_id")));
     }
 
     private void assertDoubleEquals(double expected, Object actual) {

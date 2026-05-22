@@ -31,6 +31,16 @@ checks:
     enabled: false
     severity: warning
     timeout_seconds: 60
+  transparency.live_transparency_policy:
+    enabled: false
+    severity: info
+    severity_by_feature:
+      stroking_alpha:
+      non_stroking_alpha:
+      soft_mask:
+      blend_mode:
+      transparency_group:
+    timeout_seconds: 60
   geometry.page_boxes_present:
     enabled: true
     severity: error
