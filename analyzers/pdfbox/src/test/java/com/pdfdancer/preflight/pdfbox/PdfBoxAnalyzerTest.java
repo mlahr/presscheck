@@ -70,6 +70,8 @@ class PdfBoxAnalyzerTest {
         assertDoubleEquals(100.0, evidence.get("x_dpi"));
         assertDoubleEquals(100.0, evidence.get("y_dpi"));
         assertDoubleEquals(100.0, evidence.get("min_dpi"));
+        assertEquals("DeviceRGB", evidence.get("color_space_name"));
+        assertEquals("DeviceRGB", evidence.get("color_space_family"));
     }
 
     @Test

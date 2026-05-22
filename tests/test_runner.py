@@ -42,12 +42,20 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             message="box",
             analyzer="test",
         ),
+        Finding(
+            check_id="geometry.page_boxes_present",
+            category="geometry",
+            severity=Severity.error,
+            message="box",
+            analyzer="test",
+            page=3,
+        ),
     ]
 
     summary = summarize_findings(findings)
 
-    assert summary["total_findings"] == 3
-    assert summary["by_severity"] == {"info": 0, "warning": 1, "error": 2}
+    assert summary["total_findings"] == 4
+    assert summary["by_severity"] == {"info": 0, "warning": 1, "error": 3}
     assert summary["by_check"] == [
         {
             "check_id": "fonts.non_embedded",
@@ -55,6 +63,13 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             "severity": "error",
             "count": 2,
             "pages": [1, 2, 4],
+        },
+        {
+            "check_id": "geometry.page_boxes_present",
+            "category": "geometry",
+            "severity": "error",
+            "count": 1,
+            "pages": [3],
         },
         {
             "check_id": "geometry.page_boxes_present",

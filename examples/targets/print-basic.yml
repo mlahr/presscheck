@@ -13,6 +13,20 @@ checks:
     severity: error
     min_dpi: 300
     timeout_seconds: 60
+  color.image_color_space_policy:
+    enabled: true
+    severity: warning
+    severity_by_family:
+      DeviceRGB: error
+      ICCBasedRGB: warning
+      DeviceCMYK:
+      ICCBasedCMYK:
+      DeviceGray:
+      ICCBasedGray:
+      Indexed: warning
+      Separation: warning
+      DeviceN: warning
+      Other: warning
   geometry.page_boxes_present:
     enabled: true
     severity: error

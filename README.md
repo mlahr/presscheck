@@ -146,6 +146,7 @@ jq '.findings[]' report.json
 - `document_integrity.ghostscript_processable`
 - `fonts.non_embedded`: grouped by font name and subtype
 - `images.low_effective_resolution`: direct image placements only
+- `color.image_color_space_policy`: target-driven policy for direct image placement color spaces
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
 
@@ -176,6 +177,20 @@ checks:
     severity: error
     min_dpi: 300
     timeout_seconds: 60
+  color.image_color_space_policy:
+    enabled: true
+    severity: warning
+    severity_by_family:
+      DeviceRGB: error
+      ICCBasedRGB: warning
+      DeviceCMYK:
+      ICCBasedCMYK:
+      DeviceGray:
+      ICCBasedGray:
+      Indexed: warning
+      Separation: warning
+      DeviceN: warning
+      Other: warning
   geometry.page_boxes_present:
     enabled: true
     severity: error
@@ -204,4 +219,5 @@ Severity levels:
 - The JSON format is not stable yet.
 - Raw Ghostscript logs are not included in output.
 - Image effective resolution checks currently cover direct image placements only, not images nested inside Form XObjects.
+- Image color-space policy is target-dependent and currently covers direct image placements only.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

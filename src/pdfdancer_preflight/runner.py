@@ -43,7 +43,7 @@ def run_preflight(pdf_path: Path, target: TargetConfig) -> dict:
 
 
 def summarize_findings(findings: list[Finding]) -> dict[str, Any]:
-    by_check: dict[str, dict[str, Any]] = {}
+    by_check: dict[tuple[str, str], dict[str, Any]] = {}
     by_severity = {"info": 0, "warning": 0, "error": 0}
 
     for finding in findings:
@@ -51,7 +51,7 @@ def summarize_findings(findings: list[Finding]) -> dict[str, Any]:
         by_severity[severity] += 1
 
         entry = by_check.setdefault(
-            finding.check_id,
+            (finding.check_id, severity),
             {
                 "check_id": finding.check_id,
                 "category": finding.category,

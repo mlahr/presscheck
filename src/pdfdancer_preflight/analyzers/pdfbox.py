@@ -11,6 +11,7 @@ from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
 LOW_EFFECTIVE_RESOLUTION_CHECK = "images.low_effective_resolution"
+IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
@@ -23,6 +24,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         for check in (
             target.check(NON_EMBEDDED_FONTS_CHECK),
             target.check(LOW_EFFECTIVE_RESOLUTION_CHECK),
+            target.check(IMAGE_COLOR_SPACE_POLICY_CHECK),
         )
         if check is not None
     ]
@@ -82,6 +84,10 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     image_evidence = [item for item in evidence if _is_effective_resolution_evidence(item)]
     if image_check is not None:
         findings.extend(_low_resolution_image_findings(image_evidence, image_check.severity, image_check.params))
+
+    color_check = target.check(IMAGE_COLOR_SPACE_POLICY_CHECK)
+    if color_check is not None:
+        findings.extend(_image_color_space_policy_findings(image_evidence, color_check.params))
 
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s findings=%s",
@@ -192,6 +198,51 @@ def _low_resolution_image_findings(
         )
 
     findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["min_dpi"]))
+    return findings
+
+
+def _image_color_space_policy_findings(evidence: list[dict[str, Any]], params: dict[str, Any]) -> list[Finding]:
+    severity_by_family = params.get("severity_by_family")
+    if not isinstance(severity_by_family, dict):
+        raise ValueError(f"check '{IMAGE_COLOR_SPACE_POLICY_CHECK}' requires mapping parameter 'severity_by_family'")
+
+    findings = []
+    for item in evidence:
+        family = item.get("color_space_family")
+        if not isinstance(family, str):
+            continue
+        severity_raw = severity_by_family.get(family)
+        if severity_raw is None:
+            continue
+        if not isinstance(severity_raw, str):
+            raise ValueError(
+                f"check '{IMAGE_COLOR_SPACE_POLICY_CHECK}' severity for family '{family}' must be null or a string"
+            )
+        severity = Severity.parse(severity_raw)
+        page = item.get("page")
+        resource_name = item.get("resource_name")
+        findings.append(
+            Finding(
+                check_id=IMAGE_COLOR_SPACE_POLICY_CHECK,
+                category="color",
+                severity=severity,
+                message=f"Image uses color space family {family}.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=str(resource_name) if resource_name is not None else None,
+                observed={
+                    "color_space_name": item.get("color_space_name"),
+                    "color_space_family": family,
+                    "resource_name": resource_name,
+                },
+                threshold={"severity_by_family": {family: severity.name}},
+            )
+        )
+
+    findings.sort(
+        key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["color_space_family"])
+    )
     return findings
 
 

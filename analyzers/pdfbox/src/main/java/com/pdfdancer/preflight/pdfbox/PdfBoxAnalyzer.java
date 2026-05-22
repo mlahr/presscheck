@@ -12,6 +12,14 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceCMYK;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceN;
+import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB;
+import org.apache.pdfbox.pdmodel.graphics.color.PDICCBased;
+import org.apache.pdfbox.pdmodel.graphics.color.PDIndexed;
+import org.apache.pdfbox.pdmodel.graphics.color.PDSeparation;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.util.Matrix;
@@ -130,7 +138,7 @@ public final class PdfBoxAnalyzer {
             super.processOperator(operator, operands);
         }
 
-        private void collectImage(COSName resourceName, PDImageXObject image) {
+        private void collectImage(COSName resourceName, PDImageXObject image) throws IOException {
             Matrix ctm = getGraphicsState().getCurrentTransformationMatrix();
             double drawnWidthPt = ctm.getScalingFactorX();
             double drawnHeightPt = ctm.getScalingFactorY();
@@ -142,6 +150,7 @@ public final class PdfBoxAnalyzer {
             int pixelHeight = image.getHeight();
             double xDpi = pixelWidth / (drawnWidthPt / 72.0);
             double yDpi = pixelHeight / (drawnHeightPt / 72.0);
+            PDColorSpace colorSpace = image.getColorSpace();
 
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("check_id", "images.effective_resolution");
@@ -155,7 +164,43 @@ public final class PdfBoxAnalyzer {
             item.put("x_dpi", xDpi);
             item.put("y_dpi", yDpi);
             item.put("min_dpi", Math.min(xDpi, yDpi));
+            item.put("color_space_name", colorSpace.getName());
+            item.put("color_space_family", colorSpaceFamily(colorSpace));
             evidence.add(item);
+        }
+
+        private String colorSpaceFamily(PDColorSpace colorSpace) {
+            if (colorSpace instanceof PDDeviceRGB) {
+                return "DeviceRGB";
+            }
+            if (colorSpace instanceof PDDeviceCMYK) {
+                return "DeviceCMYK";
+            }
+            if (colorSpace instanceof PDDeviceGray) {
+                return "DeviceGray";
+            }
+            if (colorSpace instanceof PDIndexed) {
+                return "Indexed";
+            }
+            if (colorSpace instanceof PDSeparation) {
+                return "Separation";
+            }
+            if (colorSpace instanceof PDDeviceN) {
+                return "DeviceN";
+            }
+            if (colorSpace instanceof PDICCBased iccBased) {
+                int components = iccBased.getNumberOfComponents();
+                if (components == 1) {
+                    return "ICCBasedGray";
+                }
+                if (components == 3) {
+                    return "ICCBasedRGB";
+                }
+                if (components == 4) {
+                    return "ICCBasedCMYK";
+                }
+            }
+            return "Other";
         }
 
         @Override
