@@ -33,6 +33,32 @@ def _target() -> TargetConfig:
                 severity=Severity.error,
                 params={"min_dpi": 300},
             ),
+            "images.jpeg_compression_policy": CheckConfig(
+                check_id="images.jpeg_compression_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={},
+            ),
+            "images.image_filter_policy": CheckConfig(
+                check_id="images.image_filter_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={
+                    "severity_by_filter": {
+                        "DCTDecode": None,
+                        "FlateDecode": None,
+                        "JPXDecode": "warning",
+                        "JBIG2Decode": "error",
+                        "Other": "warning",
+                    }
+                },
+            ),
+            "images.has_soft_mask": CheckConfig(
+                check_id="images.has_soft_mask",
+                enabled=True,
+                severity=Severity.warning,
+                params={},
+            ),
             "color.image_color_space_policy": CheckConfig(
                 check_id="color.image_color_space_policy",
                 enabled=True,
@@ -412,7 +438,13 @@ def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monke
       "y_dpi": 100.0,
       "min_dpi": 100.0,
       "color_space_name": "DeviceRGB",
-      "color_space_family": "DeviceRGB"
+      "color_space_family": "DeviceRGB",
+      "filters": ["DCTDecode"],
+      "bits_per_component": 8,
+      "interpolate": false,
+      "image_mask": false,
+      "has_soft_mask": true,
+      "has_explicit_mask": false
     },
     {
       "check_id": "images.effective_resolution",
@@ -427,7 +459,13 @@ def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monke
       "y_dpi": 300.0,
       "min_dpi": 300.0,
       "color_space_name": "DeviceCMYK",
-      "color_space_family": "DeviceCMYK"
+      "color_space_family": "DeviceCMYK",
+      "filters": ["FlateDecode"],
+      "bits_per_component": 8,
+      "interpolate": false,
+      "image_mask": false,
+      "has_soft_mask": false,
+      "has_explicit_mask": false
     }
   ]
 }
@@ -453,6 +491,37 @@ def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monke
     }
     assert image_findings[0].threshold == {"min_dpi": 300.0}
 
+    jpeg_findings = [finding for finding in findings if finding.check_id == "images.jpeg_compression_policy"]
+    assert len(jpeg_findings) == 1
+    assert jpeg_findings[0].severity == Severity.warning
+    assert jpeg_findings[0].page == 1
+    assert jpeg_findings[0].object_ref == "Form1/Im1"
+    assert jpeg_findings[0].observed == {
+        "resource_name": "Im1",
+        "pixel_width": 300,
+        "pixel_height": 300,
+        "bits_per_component": 8,
+        "color_space_name": "DeviceRGB",
+        "color_space_family": "DeviceRGB",
+        "filters": ["DCTDecode"],
+    }
+    assert jpeg_findings[0].threshold == {"filter": "DCTDecode"}
+
+    soft_mask_findings = [finding for finding in findings if finding.check_id == "images.has_soft_mask"]
+    assert len(soft_mask_findings) == 1
+    assert soft_mask_findings[0].severity == Severity.warning
+    assert soft_mask_findings[0].page == 1
+    assert soft_mask_findings[0].object_ref == "Form1/Im1"
+    assert soft_mask_findings[0].observed == {
+        "resource_name": "Im1",
+        "pixel_width": 300,
+        "pixel_height": 300,
+        "bits_per_component": 8,
+        "color_space_name": "DeviceRGB",
+        "color_space_family": "DeviceRGB",
+        "has_soft_mask": True,
+    }
+
     color_findings = [finding for finding in findings if finding.check_id == "color.image_color_space_policy"]
     assert len(color_findings) == 1
     assert color_findings[0].severity == Severity.error
@@ -464,6 +533,131 @@ def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monke
         "resource_name": "Im1",
     }
     assert color_findings[0].threshold == {"severity_by_family": {"DeviceRGB": "error"}}
+
+
+def test_pdfbox_adapter_maps_image_filter_policy(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "images.effective_resolution",
+      "category": "images",
+      "page": 1,
+      "resource_name": "Im1",
+      "filters": ["JPXDecode", "CustomDecode"],
+      "pixel_width": 300,
+      "pixel_height": 300,
+      "bits_per_component": 8,
+      "color_space_name": "DeviceRGB",
+      "color_space_family": "DeviceRGB"
+    },
+    {
+      "check_id": "images.effective_resolution",
+      "category": "images",
+      "page": 1,
+      "resource_name": "Im2",
+      "filters": ["FlateDecode"],
+      "pixel_width": 300,
+      "pixel_height": 300,
+      "bits_per_component": 8,
+      "color_space_name": "DeviceRGB",
+      "color_space_family": "DeviceRGB"
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "images.image_filter_policy": CheckConfig(
+                check_id="images.image_filter_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={
+                    "severity_by_filter": {
+                        "FlateDecode": None,
+                        "JPXDecode": "warning",
+                        "Other": "error",
+                    }
+                },
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert [finding.observed["matched_filter"] for finding in findings] == ["CustomDecode", "JPXDecode"]
+    assert [finding.severity for finding in findings] == [Severity.error, Severity.warning]
+    assert findings[0].threshold == {"severity_by_filter": {"CustomDecode": "error"}}
+    assert findings[1].threshold == {"severity_by_filter": {"JPXDecode": "warning"}}
+
+
+def test_pdfbox_adapter_skips_image_compression_checks_when_disabled(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "images.effective_resolution",
+      "category": "images",
+      "page": 1,
+      "resource_name": "Im1",
+      "filters": ["DCTDecode", "JPXDecode"],
+      "has_soft_mask": true
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "images.jpeg_compression_policy": CheckConfig(
+                check_id="images.jpeg_compression_policy",
+                enabled=False,
+                severity=Severity.warning,
+                params={},
+            ),
+            "images.image_filter_policy": CheckConfig(
+                check_id="images.image_filter_policy",
+                enabled=False,
+                severity=Severity.warning,
+                params={"severity_by_filter": {"JPXDecode": "warning"}},
+            ),
+            "images.has_soft_mask": CheckConfig(
+                check_id="images.has_soft_mask",
+                enabled=False,
+                severity=Severity.warning,
+                params={},
+            ),
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
 
 
 def test_pdfbox_adapter_allows_null_or_omitted_color_space_policy(tmp_path: Path, monkeypatch) -> None:

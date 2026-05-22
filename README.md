@@ -153,6 +153,9 @@ jq '.findings[]' report.json
 - `fonts.non_embedded`: grouped by font name and subtype
 - `fonts.minimum_text_size`: grouped by font and effective rendered text size
 - `images.low_effective_resolution`: page and Form XObject image placements
+- `images.jpeg_compression_policy`: placed images using JPEG/DCT compression
+- `images.image_filter_policy`: target-driven policy for image XObject filters
+- `images.has_soft_mask`: placed images with a soft mask
 - `color.image_color_space_policy`: target-driven policy for image placement color spaces
 - `color.output_intent_required`: target-driven document-level OutputIntent requirement
 - `color.registration_color_misuse`: painted use of registration color `/All`
@@ -195,6 +198,25 @@ checks:
     enabled: true
     severity: error
     min_dpi: 300
+    timeout_seconds: 60
+  images.jpeg_compression_policy:
+    enabled: true
+    severity: warning
+    timeout_seconds: 60
+  images.image_filter_policy:
+    enabled: true
+    severity: warning
+    severity_by_filter:
+      DCTDecode:
+      FlateDecode:
+      CCITTFaxDecode:
+      JPXDecode: warning
+      JBIG2Decode: warning
+      Other: warning
+    timeout_seconds: 60
+  images.has_soft_mask:
+    enabled: true
+    severity: warning
     timeout_seconds: 60
   color.image_color_space_policy:
     enabled: true

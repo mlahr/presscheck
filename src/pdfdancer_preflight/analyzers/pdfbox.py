@@ -14,6 +14,9 @@ from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
 MINIMUM_TEXT_SIZE_CHECK = "fonts.minimum_text_size"
 LOW_EFFECTIVE_RESOLUTION_CHECK = "images.low_effective_resolution"
+JPEG_COMPRESSION_POLICY_CHECK = "images.jpeg_compression_policy"
+IMAGE_FILTER_POLICY_CHECK = "images.image_filter_policy"
+IMAGE_SOFT_MASK_CHECK = "images.has_soft_mask"
 IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
 OUTPUT_INTENT_REQUIRED_CHECK = "color.output_intent_required"
 LIVE_TRANSPARENCY_POLICY_CHECK = "transparency.live_transparency_policy"
@@ -46,6 +49,9 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(NON_EMBEDDED_FONTS_CHECK),
             target.check(MINIMUM_TEXT_SIZE_CHECK),
             target.check(LOW_EFFECTIVE_RESOLUTION_CHECK),
+            target.check(JPEG_COMPRESSION_POLICY_CHECK),
+            target.check(IMAGE_FILTER_POLICY_CHECK),
+            target.check(IMAGE_SOFT_MASK_CHECK),
             target.check(IMAGE_COLOR_SPACE_POLICY_CHECK),
             target.check(OUTPUT_INTENT_REQUIRED_CHECK),
             target.check(LIVE_TRANSPARENCY_POLICY_CHECK),
@@ -119,6 +125,18 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     image_evidence = [item for item in evidence if _is_effective_resolution_evidence(item)]
     if image_check is not None:
         findings.extend(_low_resolution_image_findings(image_evidence, image_check.severity, image_check.params))
+
+    jpeg_check = target.check(JPEG_COMPRESSION_POLICY_CHECK)
+    if jpeg_check is not None:
+        findings.extend(_jpeg_compression_policy_findings(image_evidence, jpeg_check.severity))
+
+    image_filter_check = target.check(IMAGE_FILTER_POLICY_CHECK)
+    if image_filter_check is not None:
+        findings.extend(_image_filter_policy_findings(image_evidence, image_filter_check.params))
+
+    image_soft_mask_check = target.check(IMAGE_SOFT_MASK_CHECK)
+    if image_soft_mask_check is not None:
+        findings.extend(_image_soft_mask_findings(image_evidence, image_soft_mask_check.severity))
 
     color_check = target.check(IMAGE_COLOR_SPACE_POLICY_CHECK)
     if color_check is not None:
@@ -375,6 +393,93 @@ def _low_resolution_image_findings(
         )
 
     findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["min_dpi"]))
+    return findings
+
+
+def _jpeg_compression_policy_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    findings = []
+    for item in evidence:
+        filters = _string_list(item.get("filters"))
+        if "DCTDecode" not in filters:
+            continue
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=JPEG_COMPRESSION_POLICY_CHECK,
+                category="images",
+                severity=severity,
+                message="Image uses JPEG/DCT compression.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=_resource_ref(item),
+                observed=_image_metadata_observed(item) | {"filters": filters},
+                threshold={"filter": "DCTDecode"},
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or ""))
+    return findings
+
+
+def _image_filter_policy_findings(evidence: list[dict[str, Any]], params: dict[str, Any]) -> list[Finding]:
+    severity_by_filter = params.get("severity_by_filter")
+    if not isinstance(severity_by_filter, dict):
+        raise ValueError(f"check '{IMAGE_FILTER_POLICY_CHECK}' requires mapping parameter 'severity_by_filter'")
+
+    findings = []
+    for item in evidence:
+        filters = _string_list(item.get("filters"))
+        for filter_name in filters:
+            severity_raw = severity_by_filter.get(filter_name, severity_by_filter.get("Other"))
+            if severity_raw is None:
+                continue
+            if not isinstance(severity_raw, str):
+                raise ValueError(
+                    f"check '{IMAGE_FILTER_POLICY_CHECK}' severity for filter '{filter_name}' must be null or a string"
+                )
+            severity = Severity.parse(severity_raw)
+            page = item.get("page")
+            findings.append(
+                Finding(
+                    check_id=IMAGE_FILTER_POLICY_CHECK,
+                    category="images",
+                    severity=severity,
+                    message=f"Image uses filter {filter_name}.",
+                    analyzer="pdfbox",
+                    source_tool="pdfbox",
+                    page=page if isinstance(page, int) else None,
+                    object_ref=_resource_ref(item),
+                    observed=_image_metadata_observed(item) | {"filters": filters, "matched_filter": filter_name},
+                    threshold={"severity_by_filter": {filter_name: severity.name}},
+                )
+            )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["matched_filter"]))
+    return findings
+
+
+def _image_soft_mask_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    findings = []
+    for item in evidence:
+        if item.get("has_soft_mask") is not True:
+            continue
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=IMAGE_SOFT_MASK_CHECK,
+                category="images",
+                severity=severity,
+                message="Image uses a soft mask.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=_resource_ref(item),
+                observed=_image_metadata_observed(item) | {"has_soft_mask": True},
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or ""))
     return findings
 
 
@@ -743,6 +848,17 @@ def _number_or_none(value: Any) -> float | None:
     if isinstance(value, int | float):
         return float(value)
     return None
+
+
+def _image_metadata_observed(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "resource_name": item.get("resource_name"),
+        "pixel_width": item.get("pixel_width"),
+        "pixel_height": item.get("pixel_height"),
+        "bits_per_component": item.get("bits_per_component"),
+        "color_space_name": item.get("color_space_name"),
+        "color_space_family": item.get("color_space_family"),
+    }
 
 
 def _string_list(value: Any) -> list[str]:

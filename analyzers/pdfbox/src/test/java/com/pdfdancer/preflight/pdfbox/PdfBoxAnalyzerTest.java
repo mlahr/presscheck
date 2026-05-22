@@ -19,6 +19,7 @@ import org.apache.pdfbox.pdmodel.graphics.color.PDSeparation;
 import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
+import org.apache.pdfbox.pdmodel.graphics.image.JPEGFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.util.Matrix;
@@ -214,6 +215,12 @@ class PdfBoxAnalyzerTest {
         assertDoubleEquals(100.0, evidence.get("min_dpi"));
         assertEquals("DeviceRGB", evidence.get("color_space_name"));
         assertEquals("DeviceRGB", evidence.get("color_space_family"));
+        assertEquals(List.of("FlateDecode"), evidence.get("filters"));
+        assertEquals(8, evidence.get("bits_per_component"));
+        assertEquals(false, evidence.get("interpolate"));
+        assertEquals(false, evidence.get("image_mask"));
+        assertEquals(false, evidence.get("has_soft_mask"));
+        assertEquals(false, evidence.get("has_explicit_mask"));
 
         Map<String, Object> boundsEvidence = firstEvidenceFor(result, "geometry.object_bounds");
         assertEquals("geometry", boundsEvidence.get("category"));
@@ -232,6 +239,46 @@ class PdfBoxAnalyzerTest {
         assertDoubleEquals(300.0, evidence.get("x_dpi"));
         assertDoubleEquals(300.0, evidence.get("y_dpi"));
         assertDoubleEquals(300.0, evidence.get("min_dpi"));
+    }
+
+    @Test
+    void reportsJpegImageFilter() throws Exception {
+        File pdf = tempDir.resolve("jpeg-image.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            PDImageXObject image = createJpegImage(document, 300, 300);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.drawImage(image, 72, 500, 72, 72);
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "images.effective_resolution");
+        assertEquals(List.of("DCTDecode"), evidence.get("filters"));
+    }
+
+    @Test
+    void reportsImageSoftMask() throws Exception {
+        File pdf = tempDir.resolve("soft-mask-image.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+            PDImageXObject image = createBlueImage(document, 300, 300);
+            PDImageXObject mask = createGrayImage(document, 300, 300);
+            image.getCOSObject().setItem(COSName.SMASK, mask);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.drawImage(image, 72, 500, 72, 72);
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "images.effective_resolution");
+        assertEquals(true, evidence.get("has_soft_mask"));
     }
 
     @Test
@@ -516,6 +563,26 @@ class PdfBoxAnalyzerTest {
         for (int y = 0; y < pixelHeight; y++) {
             for (int x = 0; x < pixelWidth; x++) {
                 bufferedImage.setRGB(x, y, Color.BLUE.getRGB());
+            }
+        }
+        return LosslessFactory.createFromImage(document, bufferedImage);
+    }
+
+    private PDImageXObject createJpegImage(PDDocument document, int pixelWidth, int pixelHeight) throws Exception {
+        BufferedImage bufferedImage = new BufferedImage(pixelWidth, pixelHeight, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < pixelHeight; y++) {
+            for (int x = 0; x < pixelWidth; x++) {
+                bufferedImage.setRGB(x, y, Color.BLUE.getRGB());
+            }
+        }
+        return JPEGFactory.createFromImage(document, bufferedImage);
+    }
+
+    private PDImageXObject createGrayImage(PDDocument document, int pixelWidth, int pixelHeight) throws Exception {
+        BufferedImage bufferedImage = new BufferedImage(pixelWidth, pixelHeight, BufferedImage.TYPE_BYTE_GRAY);
+        for (int y = 0; y < pixelHeight; y++) {
+            for (int x = 0; x < pixelWidth; x++) {
+                bufferedImage.setRGB(x, y, Color.WHITE.getRGB());
             }
         }
         return LosslessFactory.createFromImage(document, bufferedImage);

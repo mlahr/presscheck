@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine;
 import org.apache.pdfbox.contentstream.operator.Operator;
+import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -422,6 +423,12 @@ public final class PdfBoxAnalyzer {
             item.put("min_dpi", Math.min(xDpi, yDpi));
             item.put("color_space_name", colorSpace.getName());
             item.put("color_space_family", colorSpaceFamily(colorSpace));
+            item.put("filters", filters(image.getCOSObject().getFilters()));
+            item.put("bits_per_component", image.getBitsPerComponent());
+            item.put("interpolate", image.getInterpolate());
+            item.put("image_mask", image.isStencil());
+            item.put("has_soft_mask", image.getSoftMask() != null);
+            item.put("has_explicit_mask", image.getCOSObject().containsKey(COSName.MASK));
             evidence.add(item);
             collectSpecialColor("image", "non_stroking", resourcePath(resourceName), colorSpace);
             collectOverprint("image", false, resourcePath(resourceName));
@@ -548,6 +555,22 @@ public final class PdfBoxAnalyzer {
             }
             if (colorSpace instanceof PDDeviceN deviceN) {
                 return deviceN.getColorantNames();
+            }
+            return List.of();
+        }
+
+        private List<String> filters(COSBase filters) {
+            if (filters instanceof COSName filter) {
+                return List.of(filter.getName());
+            }
+            if (filters instanceof COSArray filterArray) {
+                List<String> names = new ArrayList<>();
+                for (COSBase filter : filterArray) {
+                    if (filter instanceof COSName filterName) {
+                        names.add(filterName.getName());
+                    }
+                }
+                return names;
             }
             return List.of();
         }

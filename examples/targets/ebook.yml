@@ -18,6 +18,25 @@ checks:
     severity: warning
     min_dpi: 120
     timeout_seconds: 60
+  images.jpeg_compression_policy:
+    enabled: false
+    severity: info
+    timeout_seconds: 60
+  images.image_filter_policy:
+    enabled: false
+    severity: info
+    severity_by_filter:
+      DCTDecode:
+      FlateDecode:
+      CCITTFaxDecode:
+      JPXDecode: info
+      JBIG2Decode: info
+      Other: info
+    timeout_seconds: 60
+  images.has_soft_mask:
+    enabled: false
+    severity: info
+    timeout_seconds: 60
   color.image_color_space_policy:
     enabled: true
     severity: info
