@@ -42,6 +42,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
                     severity=_fallback_severity(target),
                     message="Encrypted PDFs are unsupported.",
                     analyzer="geometry",
+                    source_tool="pypdf",
                     observed={"encrypted": True},
                 )
             ]
@@ -54,6 +55,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
                 severity=_fallback_severity(target),
                 message="PDF could not be parsed for geometry checks.",
                 analyzer="geometry",
+                source_tool="pypdf",
                 observed={"exception_type": type(exc).__name__},
             )
         ]
@@ -92,6 +94,7 @@ def _check_page_boxes_present(reader: PdfReader, severity, params: dict[str, Any
                         severity=severity,
                         message=f"Page is missing required {box_name}.",
                         analyzer="geometry",
+                        source_tool="pypdf",
                         page=page_index,
                         observed={"missing_box": box_name},
                         threshold={"required_boxes": required},
@@ -122,6 +125,7 @@ def _check_trim_size(reader: PdfReader, severity, params: dict[str, Any]) -> lis
                     severity=severity,
                     message="TrimBox size does not match target trim size.",
                     analyzer="geometry",
+                    source_tool="pypdf",
                     page=page_index,
                     observed={"width_pt": width, "height_pt": height},
                     threshold={
@@ -160,6 +164,7 @@ def _check_bleed_margin(reader: PdfReader, severity, params: dict[str, Any]) -> 
                     severity=severity,
                     message="BleedBox does not extend far enough beyond TrimBox.",
                     analyzer="geometry",
+                    source_tool="pypdf",
                     page=page_index,
                     observed={"margins": margins, "too_small": too_small},
                     threshold={"margin_pt": required_margin, "tolerance_pt": tolerance},
