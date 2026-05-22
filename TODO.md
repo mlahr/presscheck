@@ -5,6 +5,24 @@ It covers both print books and ebooks.
 
 ## Most Important Missing Checks
 
+## Implemented From This Backlog
+
+### Annotations and Interactive Content
+
+Implemented:
+
+- Links
+- Forms
+- JavaScript
+- Embedded files
+- Annotations outside page boxes
+
+Still missing:
+
+- Multimedia-specific detection beyond annotation subtype/action evidence
+
+## Remaining Major Missing Checks
+
 ### Page Count and Page Sequence
 
 - Expected page count
@@ -70,17 +88,6 @@ Still missing:
 - Alpha/transparency in images for print
 - JPEG artifact heuristics, later and optional
 
-### Annotations and Interactive Content
-
-Important for ebooks, usually unwanted for print.
-
-- Links
-- Forms
-- JavaScript
-- Embedded files
-- Multimedia
-- Annotations outside page boxes
-
 ### Bookmarks and Navigation
 
 Important for ebooks.
@@ -102,9 +109,8 @@ Mostly ebook-focused.
 
 ## Suggested Priority
 
-1. Annotations, links, and embedded interactive content
-2. Page sequence, page count, and blank pages
-3. PDF/X, PDF version, and standards metadata
-4. Cover-specific checks
-5. Safe-area and bleed-content analysis
-6. Deeper color checks such as TAC and rich black
+1. Page sequence, page count, and blank pages
+2. PDF/X, PDF version, and standards metadata
+3. Cover-specific checks
+4. Safe-area and bleed-content analysis
+5. Deeper color checks such as TAC and rich black
