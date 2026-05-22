@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from pdfdancer_preflight.models import Finding, TargetConfig
 
 PAGE_BOXES_CHECK = "geometry.page_boxes_present"
 TRIM_SIZE_CHECK = "geometry.trim_size_matches"
+logger = logging.getLogger(__name__)
 
 BOX_KEYS = {
     "MediaBox": "/MediaBox",
@@ -20,11 +22,14 @@ BOX_KEYS = {
 
 def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if target.check(PAGE_BOXES_CHECK) is None and target.check(TRIM_SIZE_CHECK) is None:
+        logger.debug("all geometry checks disabled")
         return []
 
+    logger.info("parsing PDF for geometry checks")
     try:
         reader = PdfReader(str(pdf_path))
         if reader.is_encrypted:
+            logger.error("PDF is encrypted; geometry checks unsupported")
             return [
                 Finding(
                     check_id="document_integrity.encrypted_pdf",
@@ -36,6 +41,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
                 )
             ]
     except Exception as exc:
+        logger.error("PDF parse failed for geometry checks: exception_type=%s", type(exc).__name__)
         return [
             Finding(
                 check_id="document_integrity.pdf_parseable",
@@ -48,6 +54,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         ]
 
     findings: list[Finding] = []
+    logger.info("PDF parsed for geometry checks: pages=%s", len(reader.pages))
     page_boxes_check = target.check(PAGE_BOXES_CHECK)
     if page_boxes_check is not None:
         findings.extend(_check_page_boxes_present(reader, page_boxes_check.severity, page_boxes_check.params))
@@ -56,6 +63,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if trim_size_check is not None:
         findings.extend(_check_trim_size(reader, trim_size_check.severity, trim_size_check.params))
 
+    logger.info("geometry checks completed: findings=%s", len(findings))
     return findings
 
 
@@ -130,4 +138,3 @@ def _fallback_severity(target: TargetConfig):
         if check is not None:
             return check.severity
     return target.fail_at
-

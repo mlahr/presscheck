@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -11,18 +12,22 @@ from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
+logger = logging.getLogger(__name__)
 
 
 def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     check = target.check(NON_EMBEDDED_FONTS_CHECK)
     if check is None:
+        logger.debug("check disabled: %s", NON_EMBEDDED_FONTS_CHECK)
         return []
 
     jar_path = _jar_path()
     if not jar_path.exists():
+        logger.error("PDFBox analyzer jar not found: %s", jar_path)
         return [_failure("PDFBox analyzer jar was not found.", target, {"jar_path": str(jar_path)})]
 
     timeout = float(check.params.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
+    logger.info("running PDFBox analyzer: jar=%s timeout_seconds=%s", jar_path, timeout)
     try:
         completed = subprocess.run(
             ["java", "-jar", str(jar_path), str(pdf_path)],
@@ -32,26 +37,34 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             text=True,
         )
     except FileNotFoundError:
+        logger.error("Java executable not found")
         return [_failure("Java executable was not found.", target, {"executable": "java"})]
     except subprocess.TimeoutExpired:
+        logger.error("PDFBox analyzer timed out: timeout_seconds=%s", timeout)
         return [_failure("PDFBox analyzer timed out.", target, {"timeout_seconds": timeout})]
 
     if completed.returncode != 0:
+        logger.error("PDFBox analyzer failed: exit_code=%s", completed.returncode)
         return [_failure("PDFBox analyzer failed.", target, {"exit_code": completed.returncode})]
 
     try:
         payload = json.loads(completed.stdout)
     except json.JSONDecodeError:
+        logger.error("PDFBox analyzer emitted invalid JSON")
         return [_failure("PDFBox analyzer emitted invalid JSON.", target, {})]
 
     if not isinstance(payload, dict) or payload.get("ok") is not True:
+        logger.error("PDFBox analyzer returned unsuccessful payload")
         return [_failure("PDFBox analyzer returned an unsuccessful result.", target, {})]
 
     evidence = payload.get("evidence", [])
     if not isinstance(evidence, list):
+        logger.error("PDFBox analyzer evidence was not a list")
         return [_failure("PDFBox analyzer evidence was not a list.", target, {})]
 
-    return [_font_finding(item, check.severity) for item in evidence if _is_non_embedded_font_evidence(item)]
+    findings = [_font_finding(item, check.severity) for item in evidence if _is_non_embedded_font_evidence(item)]
+    logger.info("PDFBox analyzer completed: evidence=%s findings=%s", len(evidence), len(findings))
+    return findings
 
 
 def _jar_path() -> Path:
@@ -96,4 +109,3 @@ def _failure(message: str, target: TargetConfig, observed: dict[str, Any]) -> Fi
         source_tool="pdfbox",
         observed=observed,
     )
-

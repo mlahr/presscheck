@@ -34,6 +34,16 @@ uv run pdfdancer-preflight \
   /path/to/file.pdf
 ```
 
+Logs are written to stderr. The default log level is `info`.
+
+```bash
+uv run pdfdancer-preflight \
+  --target examples/targets/print-basic.yml \
+  --output result.json \
+  --log-level debug \
+  /path/to/file.pdf
+```
+
 ## PDFBox Analyzer
 
 The Python CLI calls PDFBox through an external Java analyzer jar.
@@ -131,6 +141,7 @@ Severity levels:
 ## Notes
 
 - Output is JSON written to the required `--output` path.
+- Logs are written to stderr.
 - The JSON format is not stable yet.
 - Raw Ghostscript logs are not included in output.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.
