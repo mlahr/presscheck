@@ -12,7 +12,9 @@ from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
 LOW_EFFECTIVE_RESOLUTION_CHECK = "images.low_effective_resolution"
 IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
+OUTPUT_INTENT_REQUIRED_CHECK = "color.output_intent_required"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
+OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
 logger = logging.getLogger(__name__)
@@ -25,6 +27,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(NON_EMBEDDED_FONTS_CHECK),
             target.check(LOW_EFFECTIVE_RESOLUTION_CHECK),
             target.check(IMAGE_COLOR_SPACE_POLICY_CHECK),
+            target.check(OUTPUT_INTENT_REQUIRED_CHECK),
         )
         if check is not None
     ]
@@ -89,11 +92,18 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if color_check is not None:
         findings.extend(_image_color_space_policy_findings(image_evidence, color_check.params))
 
+    output_intent_check = target.check(OUTPUT_INTENT_REQUIRED_CHECK)
+    output_intent_evidence = [item for item in evidence if _is_output_intents_evidence(item)]
+    if output_intent_check is not None:
+        findings.extend(_output_intent_required_findings(output_intent_evidence, output_intent_check.severity))
+
     logger.info(
-        "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s findings=%s",
+        "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
+        "output_intent_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
+        len(output_intent_evidence),
         len(findings),
     )
     return findings
@@ -112,6 +122,10 @@ def _is_non_embedded_font_evidence(item: Any) -> bool:
 
 def _is_effective_resolution_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == EFFECTIVE_RESOLUTION_EVIDENCE
+
+
+def _is_output_intents_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == OUTPUT_INTENTS_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -244,6 +258,24 @@ def _image_color_space_policy_findings(evidence: list[dict[str, Any]], params: d
         key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["color_space_family"])
     )
     return findings
+
+
+def _output_intent_required_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    count = 0 if not evidence else evidence[0].get("count")
+    if count != 0:
+        return []
+
+    return [
+        Finding(
+            check_id=OUTPUT_INTENT_REQUIRED_CHECK,
+            category="color",
+            severity=severity,
+            message="PDF has no OutputIntent.",
+            analyzer="pdfbox",
+            source_tool="pdfbox",
+            observed={"count": 0},
+        )
+    ]
 
 
 def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:

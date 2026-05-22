@@ -30,6 +30,12 @@ def _target() -> TargetConfig:
                 severity=Severity.warning,
                 params={"severity_by_family": {"DeviceRGB": "error", "DeviceCMYK": None}},
             ),
+            "color.output_intent_required": CheckConfig(
+                check_id="color.output_intent_required",
+                enabled=True,
+                severity=Severity.error,
+                params={},
+            ),
         },
     )
 
@@ -48,6 +54,22 @@ def test_pdfbox_adapter_groups_non_embedded_font_evidence(tmp_path: Path, monkey
   "analyzer": "pdfbox",
   "metadata": {"page_count": 1},
   "evidence": [
+    {
+      "check_id": "color.output_intents",
+      "category": "color",
+      "scope": "document",
+      "count": 1,
+      "output_intents": [
+        {
+          "subtype": "OutputIntent",
+          "output_condition": "sRGB",
+          "output_condition_identifier": "sRGB",
+          "registry_name": "http://www.color.org",
+          "info": "sRGB",
+          "has_dest_output_profile": true
+        }
+      ]
+    },
     {
       "check_id": "fonts.non_embedded",
       "category": "fonts",
@@ -157,6 +179,13 @@ def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monke
   "metadata": {"page_count": 1},
   "evidence": [
     {
+      "check_id": "color.output_intents",
+      "category": "color",
+      "scope": "document",
+      "count": 1,
+      "output_intents": []
+    },
+    {
       "check_id": "images.effective_resolution",
       "category": "images",
       "page": 1,
@@ -238,6 +267,13 @@ def test_pdfbox_adapter_allows_null_or_omitted_color_space_policy(tmp_path: Path
   "analyzer": "pdfbox",
   "metadata": {"page_count": 1},
   "evidence": [
+    {
+      "check_id": "color.output_intents",
+      "category": "color",
+      "scope": "document",
+      "count": 1,
+      "output_intents": []
+    },
     {
       "check_id": "images.effective_resolution",
       "category": "images",
@@ -336,3 +372,93 @@ def test_pdfbox_adapter_rejects_invalid_color_space_policy_severity(tmp_path: Pa
         assert "invalid severity" in str(exc)
     else:
         raise AssertionError("expected invalid severity to raise ValueError")
+
+
+def test_pdfbox_adapter_reports_missing_output_intent(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "color.output_intents",
+      "category": "color",
+      "scope": "document",
+      "count": 0,
+      "output_intents": []
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "color.output_intent_required": CheckConfig(
+                check_id="color.output_intent_required",
+                enabled=True,
+                severity=Severity.error,
+                params={},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "color.output_intent_required"
+    assert findings[0].category == "color"
+    assert findings[0].severity == Severity.error
+    assert findings[0].observed == {"count": 0}
+
+
+def test_pdfbox_adapter_allows_present_output_intent(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "color.output_intents",
+      "category": "color",
+      "scope": "document",
+      "count": 1,
+      "output_intents": []
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "color.output_intent_required": CheckConfig(
+                check_id="color.output_intent_required",
+                enabled=True,
+                severity=Severity.error,
+                params={},
+            )
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []

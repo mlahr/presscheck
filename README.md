@@ -114,7 +114,13 @@ Reports include a built-in summary:
         "count": 1,
         "pages": [1, 2]
       }
-    ]
+    ],
+    "color": {
+      "image_color_space_families": {
+        "ICCBasedRGB": 77,
+        "Indexed": 17
+      }
+    }
   }
 }
 ```
@@ -147,6 +153,7 @@ jq '.findings[]' report.json
 - `fonts.non_embedded`: grouped by font name and subtype
 - `images.low_effective_resolution`: direct image placements only
 - `color.image_color_space_policy`: target-driven policy for direct image placement color spaces
+- `color.output_intent_required`: target-driven document-level OutputIntent requirement
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
 
@@ -191,6 +198,10 @@ checks:
       Separation: warning
       DeviceN: warning
       Other: warning
+  color.output_intent_required:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
   geometry.page_boxes_present:
     enabled: true
     severity: error
@@ -220,4 +231,6 @@ Severity levels:
 - Raw Ghostscript logs are not included in output.
 - Image effective resolution checks currently cover direct image placements only, not images nested inside Form XObjects.
 - Image color-space policy is target-dependent and currently covers direct image placements only.
+- Print target requires an OutputIntent; ebook target disables that requirement.
+- `summary.color.image_color_space_families` currently counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

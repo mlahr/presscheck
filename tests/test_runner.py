@@ -50,13 +50,47 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             analyzer="test",
             page=3,
         ),
+        Finding(
+            check_id="color.image_color_space_policy",
+            category="color",
+            severity=Severity.warning,
+            message="rgb",
+            analyzer="test",
+            page=5,
+            observed={"color_space_family": "ICCBasedRGB"},
+        ),
+        Finding(
+            check_id="color.image_color_space_policy",
+            category="color",
+            severity=Severity.warning,
+            message="indexed",
+            analyzer="test",
+            page=6,
+            observed={"color_space_family": "Indexed"},
+        ),
+        Finding(
+            check_id="color.image_color_space_policy",
+            category="color",
+            severity=Severity.warning,
+            message="rgb",
+            analyzer="test",
+            page=7,
+            observed={"color_space_family": "ICCBasedRGB"},
+        ),
     ]
 
     summary = summarize_findings(findings)
 
-    assert summary["total_findings"] == 4
-    assert summary["by_severity"] == {"info": 0, "warning": 1, "error": 3}
+    assert summary["total_findings"] == 7
+    assert summary["by_severity"] == {"info": 0, "warning": 4, "error": 3}
     assert summary["by_check"] == [
+        {
+            "check_id": "color.image_color_space_policy",
+            "category": "color",
+            "severity": "warning",
+            "count": 3,
+            "pages": [5, 6, 7],
+        },
         {
             "check_id": "fonts.non_embedded",
             "category": "fonts",
@@ -79,3 +113,4 @@ def test_summarize_findings_groups_by_check_and_severity() -> None:
             "pages": [],
         },
     ]
+    assert summary["color"]["image_color_space_families"] == {"ICCBasedRGB": 2, "Indexed": 1}

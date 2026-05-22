@@ -27,6 +27,10 @@ checks:
       Separation: warning
       DeviceN: warning
       Other: warning
+  color.output_intent_required:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
   geometry.page_boxes_present:
     enabled: true
     severity: error

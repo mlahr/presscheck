@@ -86,4 +86,19 @@ def summarize_findings(findings: list[Finding]) -> dict[str, Any]:
         "total_findings": len(findings),
         "by_severity": by_severity,
         "by_check": checks,
+        "color": {
+            "image_color_space_families": _image_color_space_family_counts(findings),
+        },
     }
+
+
+def _image_color_space_family_counts(findings: list[Finding]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for finding in findings:
+        if finding.check_id != "color.image_color_space_policy":
+            continue
+        family = finding.observed.get("color_space_family")
+        if not isinstance(family, str):
+            continue
+        counts[family] = counts.get(family, 0) + 1
+    return dict(sorted(counts.items()))

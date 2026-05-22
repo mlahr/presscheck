@@ -19,6 +19,7 @@ import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceN;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceRGB;
 import org.apache.pdfbox.pdmodel.graphics.color.PDICCBased;
 import org.apache.pdfbox.pdmodel.graphics.color.PDIndexed;
+import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
 import org.apache.pdfbox.pdmodel.graphics.color.PDSeparation;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
@@ -64,6 +65,7 @@ public final class PdfBoxAnalyzer {
     static Map<String, Object> analyze(File pdfFile) throws Exception {
         try (PDDocument document = Loader.loadPDF(pdfFile)) {
             List<Map<String, Object>> evidence = new ArrayList<>();
+            collectOutputIntentEvidence(document, evidence);
             int pageNumber = 0;
             for (PDPage page : document.getPages()) {
                 pageNumber++;
@@ -105,6 +107,29 @@ public final class PdfBoxAnalyzer {
             item.put("embedded", false);
             evidence.add(item);
         }
+    }
+
+    private static void collectOutputIntentEvidence(PDDocument document, List<Map<String, Object>> evidence) {
+        List<PDOutputIntent> outputIntents = document.getDocumentCatalog().getOutputIntents();
+        List<Map<String, Object>> outputIntentItems = new ArrayList<>();
+        for (PDOutputIntent outputIntent : outputIntents) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("subtype", outputIntent.getCOSObject().getNameAsString(COSName.S));
+            item.put("output_condition", outputIntent.getOutputCondition());
+            item.put("output_condition_identifier", outputIntent.getOutputConditionIdentifier());
+            item.put("registry_name", outputIntent.getRegistryName());
+            item.put("info", outputIntent.getInfo());
+            item.put("has_dest_output_profile", outputIntent.getDestOutputIntent() != null);
+            outputIntentItems.add(item);
+        }
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("check_id", "color.output_intents");
+        item.put("category", "color");
+        item.put("scope", "document");
+        item.put("count", outputIntents.size());
+        item.put("output_intents", outputIntentItems);
+        evidence.add(item);
     }
 
     private static void collectPageImageEvidence(PDPage page, int pageNumber, List<Map<String, Object>> evidence) throws IOException {
