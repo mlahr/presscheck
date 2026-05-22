@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfWriter
 from pypdf.generic import NameObject, RectangleObject
 
 from pdfdancer_preflight.analyzers.geometry import analyze
@@ -74,4 +74,3 @@ def test_geometry_reports_invalid_pdf(tmp_path: Path) -> None:
     findings = analyze(pdf, _target())
 
     assert findings[0].check_id == "document_integrity.pdf_parseable"
-

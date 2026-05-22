@@ -16,6 +16,7 @@ def run_preflight(pdf_path: Path, target: TargetConfig) -> dict:
     failed = should_fail(findings, target.fail_at)
     return {
         "ok": not failed,
+        "failed": failed,
         "input": str(pdf_path),
         "fail_at": target.fail_at.name,
         "findings": [finding.to_json() for finding in findings],

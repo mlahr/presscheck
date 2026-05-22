@@ -5,7 +5,7 @@ Architecture prototype for an internal, CI-oriented PDF preflight tool.
 The prototype currently proves the basic flow:
 
 ```text
-target config -> analyzers -> findings -> severity evaluation -> JSON stdout -> exit code
+target config -> analyzers -> findings -> severity evaluation -> JSON file -> exit code
 ```
 
 ## Requirements
@@ -20,16 +20,17 @@ target config -> analyzers -> findings -> severity evaluation -> JSON stdout -> 
 Use the sample target config:
 
 ```bash
-uv run pdfdancer-preflight --target examples/targets/print-basic.yml input.pdf
+uv run pdfdancer-preflight --target examples/targets/print-basic.yml --output result.json input.pdf
 ```
 
-The CLI writes JSON to stdout and exits nonzero when findings meet or exceed the target's `fail_at` severity.
+The CLI writes JSON to the output file and exits nonzero when findings meet or exceed the target's `fail_at` severity.
 
 Example with a known PDF:
 
 ```bash
 uv run pdfdancer-preflight \
   --target examples/targets/print-basic.yml \
+  --output result.json \
   /path/to/file.pdf
 ```
 
@@ -53,7 +54,7 @@ Override the jar path:
 
 ```bash
 PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR=/path/to/pdfbox-analyzer.jar \
-  uv run pdfdancer-preflight --target examples/targets/print-basic.yml input.pdf
+  uv run pdfdancer-preflight --target examples/targets/print-basic.yml --output result.json input.pdf
 ```
 
 Run the analyzer directly:
@@ -68,6 +69,12 @@ Run the test suite:
 
 ```bash
 uv run pytest
+```
+
+Run the Python linter:
+
+```bash
+uv run ruff check
 ```
 
 Run the Java analyzer tests:
@@ -123,7 +130,7 @@ Severity levels:
 
 ## Notes
 
-- Output is JSON on stdout.
+- Output is JSON written to the required `--output` path.
 - The JSON format is not stable yet.
 - Raw Ghostscript logs are not included in output.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

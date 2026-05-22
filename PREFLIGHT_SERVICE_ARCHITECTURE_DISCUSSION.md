@@ -35,7 +35,7 @@ The fail threshold is target-configurable. For example, one target may fail at e
 
 Output is JSON. No separate human-readable report format is planned initially.
 
-JSON output goes to stdout.
+JSON output is written to a required output file.
 
 The JSON format may change freely during early development. A stable output contract is not required yet.
 

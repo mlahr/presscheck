@@ -5,7 +5,6 @@ from pathlib import Path
 
 from pdfdancer_preflight.models import Finding, TargetConfig
 
-
 CHECK_ID = "document_integrity.ghostscript_processable"
 
 

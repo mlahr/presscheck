@@ -8,7 +8,6 @@ from typing import Any
 
 from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 
-
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60

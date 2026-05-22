@@ -11,7 +11,7 @@ class Severity(IntEnum):
     error = 3
 
     @classmethod
-    def parse(cls, value: str) -> "Severity":
+    def parse(cls, value: str) -> Severity:
         try:
             return cls[value]
         except KeyError as exc:
@@ -77,4 +77,3 @@ class TargetConfig:
 
 def should_fail(findings: list[Finding], fail_at: Severity) -> bool:
     return any(finding.severity >= fail_at for finding in findings)
-
