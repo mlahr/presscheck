@@ -25,7 +25,12 @@ def run_preflight(pdf_path: Path, target: TargetConfig) -> dict:
         logger.info("finished analyzer: %s findings=%s", analyzer_name, len(findings) - before)
 
     failed = should_fail(findings, target.fail_at)
-    logger.info("severity evaluation complete: fail_at=%s failed=%s total_findings=%s", target.fail_at.name, failed, len(findings))
+    logger.info(
+        "severity evaluation complete: fail_at=%s failed=%s total_findings=%s",
+        target.fail_at.name,
+        failed,
+        len(findings),
+    )
     return {
         "ok": not failed,
         "failed": failed,

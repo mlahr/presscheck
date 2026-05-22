@@ -22,7 +22,10 @@ def main(
         Path, typer.Option("--target", "-t", exists=True, dir_okay=False, readable=True, help="Target YAML.")
     ],
     output: Annotated[Path, typer.Option("--output", "-o", dir_okay=False, writable=True, help="Output JSON file.")],
-    log_level: Annotated[str, typer.Option("--log-level", help="Log level: critical, error, warning, info, debug.")] = "info",
+    log_level: Annotated[
+        str,
+        typer.Option("--log-level", help="Log level: critical, error, warning, info, debug."),
+    ] = "info",
 ) -> None:
     try:
         configure_logging(log_level)
