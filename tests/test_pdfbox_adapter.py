@@ -4,6 +4,9 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+from pypdf import PdfWriter
+from pypdf.generic import NameObject, RectangleObject
+
 from pdfdancer_preflight.analyzers import pdfbox
 from pdfdancer_preflight.models import CheckConfig, Severity, TargetConfig
 
@@ -50,8 +53,22 @@ def _target() -> TargetConfig:
                     }
                 },
             ),
+            "geometry.object_bounds_within_box": CheckConfig(
+                check_id="geometry.object_bounds_within_box",
+                enabled=True,
+                severity=Severity.warning,
+                params={"box": "BleedBox", "tolerance_pt": 0.5},
+            ),
         },
     )
+
+
+def _write_pdf_with_bleed_box(path: Path, bleed_box=(0, 0, 100, 100)) -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    page[NameObject("/BleedBox")] = RectangleObject(bleed_box)
+    with path.open("wb") as file:
+        writer.write(file)
 
 
 def test_pdfbox_adapter_groups_non_embedded_font_evidence(tmp_path: Path, monkeypatch) -> None:
@@ -635,6 +652,160 @@ def test_pdfbox_adapter_falls_back_to_resource_name_without_resource_path(tmp_pa
     findings = pdfbox.analyze(tmp_path / "input.pdf", target)
 
     assert findings[0].object_ref == "gs1"
+
+
+def test_pdfbox_adapter_reports_object_bounds_outside_configured_box(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    _write_pdf_with_bleed_box(pdf, bleed_box=(0, 0, 100, 100))
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.object_bounds",
+      "category": "geometry",
+      "page": 1,
+      "resource_name": "Im1",
+      "resource_path": "Form1/Im1",
+      "object_type": "image",
+      "bounds_pt": {"left": -2.0, "bottom": 10.0, "right": 105.0, "top": 120.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "geometry.object_bounds_within_box": CheckConfig(
+                check_id="geometry.object_bounds_within_box",
+                enabled=True,
+                severity=Severity.warning,
+                params={"box": "BleedBox", "tolerance_pt": 0.5},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(pdf, target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "geometry.object_bounds_within_box"
+    assert findings[0].category == "geometry"
+    assert findings[0].severity == Severity.warning
+    assert findings[0].page == 1
+    assert findings[0].object_ref == "Form1/Im1"
+    assert findings[0].observed == {
+        "object_type": "image",
+        "bounds_pt": {"left": -2.0, "bottom": 10.0, "right": 105.0, "top": 120.0},
+        "box": "BleedBox",
+        "box_bounds_pt": {"left": 0.0, "bottom": 0.0, "right": 100.0, "top": 100.0},
+        "outside": {"left_pt": 2.0, "right_pt": 5.0, "top_pt": 20.0},
+    }
+    assert findings[0].threshold == {"box": "BleedBox", "tolerance_pt": 0.5}
+
+
+def test_pdfbox_adapter_allows_object_bounds_inside_configured_box(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    _write_pdf_with_bleed_box(pdf, bleed_box=(0, 0, 100, 100))
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.object_bounds",
+      "category": "geometry",
+      "page": 1,
+      "resource_name": "Im1",
+      "object_type": "image",
+      "bounds_pt": {"left": 0.25, "bottom": 0.25, "right": 100.25, "top": 100.25}
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "geometry.object_bounds_within_box": CheckConfig(
+                check_id="geometry.object_bounds_within_box",
+                enabled=True,
+                severity=Severity.warning,
+                params={"box": "BleedBox", "tolerance_pt": 0.5},
+            )
+        },
+    )
+
+    assert pdfbox.analyze(pdf, target) == []
+
+
+def test_pdfbox_adapter_skips_object_bounds_when_configured_box_is_missing(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    with pdf.open("wb") as file:
+        writer.write(file)
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.object_bounds",
+      "category": "geometry",
+      "page": 1,
+      "resource_name": "Im1",
+      "object_type": "image",
+      "bounds_pt": {"left": -10.0, "bottom": 0.0, "right": 50.0, "top": 50.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "geometry.object_bounds_within_box": CheckConfig(
+                check_id="geometry.object_bounds_within_box",
+                enabled=True,
+                severity=Severity.warning,
+                params={"box": "BleedBox", "tolerance_pt": 0.5},
+            )
+        },
+    )
+
+    assert pdfbox.analyze(pdf, target) == []
 
 
 def test_pdfbox_adapter_rejects_invalid_transparency_policy_severity(tmp_path: Path, monkeypatch) -> None:

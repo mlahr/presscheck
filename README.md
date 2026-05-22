@@ -158,6 +158,7 @@ jq '.findings[]' report.json
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
 - `geometry.bleed_margin_at_least`
+- `geometry.object_bounds_within_box`: placed image/Form XObject bounds within a configured page box
 
 ## Target Config
 
@@ -232,6 +233,11 @@ checks:
     severity: error
     margin_pt: 9
     tolerance_pt: 0.5
+  geometry.object_bounds_within_box:
+    enabled: true
+    severity: warning
+    box: BleedBox
+    tolerance_pt: 0.5
 ```
 
 Severity levels:
@@ -250,5 +256,6 @@ Severity levels:
 - Print target requires an OutputIntent; ebook target disables that requirement.
 - Transparency policy checks cover applied graphics states and directly used transparency-group XObjects in page and Form XObject content.
 - Structural bleed checks compare BleedBox margins against TrimBox; they do not verify that artwork visually fills the bleed area.
+- Object bounds checks currently cover placed images and Form XObjects, not text, vector paths, annotations, patterns, or raster-derived artwork.
 - `summary.color.image_color_space_findings_by_family` counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

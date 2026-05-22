@@ -121,6 +121,12 @@ class PdfBoxAnalyzerTest {
         assertDoubleEquals(100.0, evidence.get("min_dpi"));
         assertEquals("DeviceRGB", evidence.get("color_space_name"));
         assertEquals("DeviceRGB", evidence.get("color_space_family"));
+
+        Map<String, Object> boundsEvidence = firstEvidenceFor(result, "geometry.object_bounds");
+        assertEquals("geometry", boundsEvidence.get("category"));
+        assertEquals("image", boundsEvidence.get("object_type"));
+        assertEquals("Im1", boundsEvidence.get("resource_path"));
+        assertBounds(boundsEvidence, 72.0, 500.0, 288.0, 716.0);
     }
 
     @Test
@@ -167,6 +173,14 @@ class PdfBoxAnalyzerTest {
         assertDoubleEquals(216.0, evidence.get("drawn_width_pt"));
         assertDoubleEquals(216.0, evidence.get("drawn_height_pt"));
         assertDoubleEquals(100.0, evidence.get("min_dpi"));
+
+        Map<String, Object> formBounds = firstEvidenceFor(result, "geometry.object_bounds", "Form1");
+        assertEquals("form", formBounds.get("object_type"));
+        assertBounds(formBounds, 72.0, 500.0, 288.0, 716.0);
+
+        Map<String, Object> imageBounds = firstEvidenceFor(result, "geometry.object_bounds", "Form1/Im1");
+        assertEquals("image", imageBounds.get("object_type"));
+        assertBounds(imageBounds, 72.0, 500.0, 288.0, 716.0);
     }
 
     @Test
@@ -335,6 +349,15 @@ class PdfBoxAnalyzerTest {
                 .orElseThrow();
     }
 
+    private Map<String, Object> firstEvidenceFor(Map<String, Object> result, String checkId, String resourcePath) {
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> evidence = (List<Map<String, Object>>) result.get("evidence");
+        return evidence.stream()
+                .filter(item -> checkId.equals(item.get("check_id")) && resourcePath.equals(item.get("resource_path")))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private boolean hasEvidenceFor(Map<String, Object> result, String checkId) {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> evidence = (List<Map<String, Object>>) result.get("evidence");
@@ -343,6 +366,15 @@ class PdfBoxAnalyzerTest {
 
     private void assertDoubleEquals(double expected, Object actual) {
         assertEquals(expected, ((Number) actual).doubleValue(), 0.001);
+    }
+
+    private void assertBounds(Map<String, Object> evidence, double left, double bottom, double right, double top) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> bounds = (Map<String, Object>) evidence.get("bounds_pt");
+        assertDoubleEquals(left, bounds.get("left"));
+        assertDoubleEquals(bottom, bounds.get("bottom"));
+        assertDoubleEquals(right, bounds.get("right"));
+        assertDoubleEquals(top, bounds.get("top"));
     }
 
     private byte[] minimalRgbIccProfile() {

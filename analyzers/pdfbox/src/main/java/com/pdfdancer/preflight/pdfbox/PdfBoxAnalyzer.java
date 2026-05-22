@@ -10,6 +10,7 @@ import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
@@ -22,6 +23,7 @@ import org.apache.pdfbox.pdmodel.graphics.color.PDICCBased;
 import org.apache.pdfbox.pdmodel.graphics.color.PDIndexed;
 import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
 import org.apache.pdfbox.pdmodel.graphics.color.PDSeparation;
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.form.PDTransparencyGroup;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
@@ -172,13 +174,15 @@ public final class PdfBoxAnalyzer {
                 if (resources != null) {
                     PDXObject xObject = resources.getXObject(resourceName);
                     if (xObject instanceof PDImageXObject image) {
+                        collectObjectBounds(resourceName, "image", imageBounds());
                         collectImage(resourceName, image);
                         return;
                     }
                     if (xObject instanceof PDTransparencyGroup) {
                         collectTransparencyGroup(resourceName);
                     }
-                    if (xObject instanceof org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject) {
+                    if (xObject instanceof PDFormXObject form) {
+                        collectObjectBounds(resourceName, "form", formBounds(form));
                         resourcePath.add(resourceName.getName());
                         try {
                             super.processOperator(operator, operands);
@@ -190,6 +194,49 @@ public final class PdfBoxAnalyzer {
                 }
             }
             super.processOperator(operator, operands);
+        }
+
+        private void collectObjectBounds(COSName resourceName, String objectType, Map<String, Double> bounds) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("check_id", "geometry.object_bounds");
+            item.put("category", "geometry");
+            item.put("page", pageNumber);
+            item.put("resource_name", resourceName.getName());
+            item.put("resource_path", resourcePath(resourceName));
+            item.put("object_type", objectType);
+            item.put("bounds_pt", bounds);
+            evidence.add(item);
+        }
+
+        private Map<String, Double> imageBounds() {
+            Matrix ctm = getGraphicsState().getCurrentTransformationMatrix();
+            return transformedBounds(ctm, 0, 0, 1, 1);
+        }
+
+        private Map<String, Double> formBounds(PDFormXObject form) {
+            Matrix ctm = getGraphicsState().getCurrentTransformationMatrix().clone();
+            ctm.concatenate(form.getMatrix());
+            PDRectangle bbox = form.getBBox();
+            return transformedBounds(ctm, bbox.getLowerLeftX(), bbox.getLowerLeftY(), bbox.getUpperRightX(), bbox.getUpperRightY());
+        }
+
+        private Map<String, Double> transformedBounds(Matrix matrix, float left, float bottom, float right, float top) {
+            Point2D.Float lowerLeft = matrix.transformPoint(left, bottom);
+            Point2D.Float lowerRight = matrix.transformPoint(right, bottom);
+            Point2D.Float upperLeft = matrix.transformPoint(left, top);
+            Point2D.Float upperRight = matrix.transformPoint(right, top);
+
+            double minX = Math.min(Math.min(lowerLeft.x, lowerRight.x), Math.min(upperLeft.x, upperRight.x));
+            double maxX = Math.max(Math.max(lowerLeft.x, lowerRight.x), Math.max(upperLeft.x, upperRight.x));
+            double minY = Math.min(Math.min(lowerLeft.y, lowerRight.y), Math.min(upperLeft.y, upperRight.y));
+            double maxY = Math.max(Math.max(lowerLeft.y, lowerRight.y), Math.max(upperLeft.y, upperRight.y));
+
+            Map<String, Double> bounds = new LinkedHashMap<>();
+            bounds.put("left", minX);
+            bounds.put("bottom", minY);
+            bounds.put("right", maxX);
+            bounds.put("top", maxY);
+            return bounds;
         }
 
         private void collectTransparencyState(COSName resourceName, PDExtendedGraphicsState graphicsState) {

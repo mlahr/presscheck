@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from pypdf import PdfReader
+
 from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
@@ -14,11 +16,19 @@ LOW_EFFECTIVE_RESOLUTION_CHECK = "images.low_effective_resolution"
 IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
 OUTPUT_INTENT_REQUIRED_CHECK = "color.output_intent_required"
 LIVE_TRANSPARENCY_POLICY_CHECK = "transparency.live_transparency_policy"
+OBJECT_BOUNDS_WITHIN_BOX_CHECK = "geometry.object_bounds_within_box"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
 TRANSPARENCY_FEATURES_EVIDENCE = "transparency.features"
+OBJECT_BOUNDS_EVIDENCE = "geometry.object_bounds"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
+BOX_KEYS = {
+    "MediaBox": "/MediaBox",
+    "TrimBox": "/TrimBox",
+    "BleedBox": "/BleedBox",
+    "CropBox": "/CropBox",
+}
 logger = logging.getLogger(__name__)
 
 
@@ -31,6 +41,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(IMAGE_COLOR_SPACE_POLICY_CHECK),
             target.check(OUTPUT_INTENT_REQUIRED_CHECK),
             target.check(LIVE_TRANSPARENCY_POLICY_CHECK),
+            target.check(OBJECT_BOUNDS_WITHIN_BOX_CHECK),
         )
         if check is not None
     ]
@@ -105,14 +116,27 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if transparency_check is not None:
         findings.extend(_live_transparency_policy_findings(transparency_evidence, transparency_check.params))
 
+    object_bounds_check = target.check(OBJECT_BOUNDS_WITHIN_BOX_CHECK)
+    object_bounds_evidence = [item for item in evidence if _is_object_bounds_evidence(item)]
+    if object_bounds_check is not None:
+        findings.extend(
+            _object_bounds_within_box_findings(
+                pdf_path,
+                object_bounds_evidence,
+                object_bounds_check.severity,
+                object_bounds_check.params,
+            )
+        )
+
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
-        "output_intent_evidence=%s transparency_evidence=%s findings=%s",
+        "output_intent_evidence=%s transparency_evidence=%s object_bounds_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
         len(output_intent_evidence),
         len(transparency_evidence),
+        len(object_bounds_evidence),
         len(findings),
     )
     return findings
@@ -139,6 +163,10 @@ def _is_output_intents_evidence(item: Any) -> bool:
 
 def _is_transparency_features_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == TRANSPARENCY_FEATURES_EVIDENCE
+
+
+def _is_object_bounds_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == OBJECT_BOUNDS_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -357,6 +385,117 @@ def _live_transparency_policy_findings(evidence: list[dict[str, Any]], params: d
 
     findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["features"]))
     return findings
+
+
+def _object_bounds_within_box_findings(
+    pdf_path: Path,
+    evidence: list[dict[str, Any]],
+    severity: Severity,
+    params: dict[str, Any],
+) -> list[Finding]:
+    box_name = str(params.get("box", "BleedBox"))
+    pdf_box_key = BOX_KEYS.get(box_name)
+    if pdf_box_key is None:
+        raise ValueError(f"check '{OBJECT_BOUNDS_WITHIN_BOX_CHECK}' has unsupported box '{box_name}'")
+    tolerance = float(params.get("tolerance_pt", 0))
+
+    page_boxes = _read_page_boxes(pdf_path, pdf_box_key)
+    findings = []
+    for item in evidence:
+        page = item.get("page")
+        if not isinstance(page, int):
+            continue
+        box_bounds = page_boxes.get(page)
+        if box_bounds is None:
+            continue
+        object_bounds = _bounds_or_none(item.get("bounds_pt"))
+        if object_bounds is None:
+            continue
+
+        outside = _outside_amounts(object_bounds, box_bounds, tolerance)
+        if not outside:
+            continue
+
+        findings.append(
+            Finding(
+                check_id=OBJECT_BOUNDS_WITHIN_BOX_CHECK,
+                category="geometry",
+                severity=severity,
+                message=f"Placed object extends outside {box_name}.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page,
+                object_ref=_resource_ref(item),
+                observed={
+                    "object_type": item.get("object_type"),
+                    "bounds_pt": object_bounds,
+                    "box": box_name,
+                    "box_bounds_pt": box_bounds,
+                    "outside": outside,
+                },
+                threshold={"box": box_name, "tolerance_pt": tolerance},
+            )
+        )
+
+    findings.sort(
+        key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["object_type"] or "")
+    )
+    return findings
+
+
+def _read_page_boxes(pdf_path: Path, pdf_box_key: str) -> dict[int, dict[str, float]]:
+    try:
+        reader = PdfReader(str(pdf_path))
+        if reader.is_encrypted:
+            return {}
+    except Exception:
+        return {}
+
+    page_boxes = {}
+    for page_index, page in enumerate(reader.pages, start=1):
+        box = page.get(pdf_box_key)
+        if box is None:
+            continue
+        page_boxes[page_index] = {
+            "left": float(box[0]),
+            "bottom": float(box[1]),
+            "right": float(box[2]),
+            "top": float(box[3]),
+        }
+    return page_boxes
+
+
+def _bounds_or_none(value: Any) -> dict[str, float] | None:
+    if not isinstance(value, dict):
+        return None
+    bounds = {}
+    for key in ("left", "bottom", "right", "top"):
+        number = _number_or_none(value.get(key))
+        if number is None:
+            return None
+        bounds[key] = number
+    return bounds
+
+
+def _outside_amounts(
+    object_bounds: dict[str, float],
+    box_bounds: dict[str, float],
+    tolerance: float,
+) -> dict[str, float]:
+    outside = {}
+    left = box_bounds["left"] - object_bounds["left"]
+    bottom = box_bounds["bottom"] - object_bounds["bottom"]
+    right = object_bounds["right"] - box_bounds["right"]
+    top = object_bounds["top"] - box_bounds["top"]
+    if left > tolerance:
+        outside["left_pt"] = left
+    if bottom > tolerance:
+        outside["bottom_pt"] = bottom
+    if right > tolerance:
+        outside["right_pt"] = right
+    if top > tolerance:
+        outside["top_pt"] = top
+    return outside
 
 
 def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:

@@ -59,3 +59,8 @@ checks:
     severity: error
     margin_pt: 9
     tolerance_pt: 0.5
+  geometry.object_bounds_within_box:
+    enabled: true
+    severity: warning
+    box: BleedBox
+    tolerance_pt: 0.5
