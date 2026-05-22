@@ -200,7 +200,7 @@ def _low_resolution_image_findings(
             continue
 
         page = item.get("page")
-        resource_name = item.get("resource_name")
+        resource_ref = _resource_ref(item)
         findings.append(
             Finding(
                 check_id=LOW_EFFECTIVE_RESOLUTION_CHECK,
@@ -210,7 +210,7 @@ def _low_resolution_image_findings(
                 analyzer="pdfbox",
                 source_tool="pdfbox",
                 page=page if isinstance(page, int) else None,
-                object_ref=str(resource_name) if resource_name is not None else None,
+                object_ref=resource_ref,
                 observed={
                     "pixel_width": item.get("pixel_width"),
                     "pixel_height": item.get("pixel_height"),
@@ -248,6 +248,7 @@ def _image_color_space_policy_findings(evidence: list[dict[str, Any]], params: d
         severity = Severity.parse(severity_raw)
         page = item.get("page")
         resource_name = item.get("resource_name")
+        resource_ref = _resource_ref(item)
         findings.append(
             Finding(
                 check_id=IMAGE_COLOR_SPACE_POLICY_CHECK,
@@ -257,7 +258,7 @@ def _image_color_space_policy_findings(evidence: list[dict[str, Any]], params: d
                 analyzer="pdfbox",
                 source_tool="pdfbox",
                 page=page if isinstance(page, int) else None,
-                object_ref=str(resource_name) if resource_name is not None else None,
+                object_ref=resource_ref,
                 observed={
                     "color_space_name": item.get("color_space_name"),
                     "color_space_family": family,
@@ -326,6 +327,7 @@ def _live_transparency_policy_findings(evidence: list[dict[str, Any]], params: d
         severity = max(configured_severities.values())
         page = item.get("page")
         resource_name = item.get("resource_name")
+        resource_ref = _resource_ref(item)
         observed = {
             "features": configured_features,
             "resource_name": resource_name,
@@ -343,7 +345,7 @@ def _live_transparency_policy_findings(evidence: list[dict[str, Any]], params: d
                 analyzer="pdfbox",
                 source_tool="pdfbox",
                 page=page if isinstance(page, int) else None,
-                object_ref=str(resource_name) if resource_name is not None else None,
+                object_ref=resource_ref,
                 observed=observed,
                 threshold={
                     "severity_by_feature": {
@@ -367,6 +369,16 @@ def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:
 def _number_or_none(value: Any) -> float | None:
     if isinstance(value, int | float):
         return float(value)
+    return None
+
+
+def _resource_ref(item: dict[str, Any]) -> str | None:
+    resource_path = item.get("resource_path")
+    if isinstance(resource_path, str):
+        return resource_path
+    resource_name = item.get("resource_name")
+    if resource_name is not None:
+        return str(resource_name)
     return None
 
 

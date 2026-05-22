@@ -151,8 +151,8 @@ jq '.findings[]' report.json
 
 - `document_integrity.ghostscript_processable`
 - `fonts.non_embedded`: grouped by font name and subtype
-- `images.low_effective_resolution`: direct image placements only
-- `color.image_color_space_policy`: target-driven policy for direct image placement color spaces
+- `images.low_effective_resolution`: page and Form XObject image placements
+- `color.image_color_space_policy`: target-driven policy for image placement color spaces
 - `color.output_intent_required`: target-driven document-level OutputIntent requirement
 - `transparency.live_transparency_policy`: target-driven policy for applied live transparency features
 - `geometry.page_boxes_present`
@@ -240,9 +240,8 @@ Severity levels:
 - Logs are written to stderr.
 - The JSON format is not stable yet.
 - Raw Ghostscript logs are not included in output.
-- Image effective resolution checks currently cover direct image placements only, not images nested inside Form XObjects.
-- Image color-space policy is target-dependent and currently covers direct image placements only.
+- Image effective resolution and image color-space policy checks cover page content and nested Form XObject content.
 - Print target requires an OutputIntent; ebook target disables that requirement.
-- Transparency policy checks currently cover applied graphics states and directly used transparency-group XObjects.
+- Transparency policy checks cover applied graphics states and directly used transparency-group XObjects in page and Form XObject content.
 - `summary.color.image_color_space_findings_by_family` counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

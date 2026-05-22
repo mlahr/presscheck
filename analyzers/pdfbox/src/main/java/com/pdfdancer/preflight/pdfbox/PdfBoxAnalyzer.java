@@ -147,6 +147,7 @@ public final class PdfBoxAnalyzer {
     private static final class PageContentCollector extends PDFGraphicsStreamEngine {
         private final int pageNumber;
         private final List<Map<String, Object>> evidence;
+        private final List<String> resourcePath = new ArrayList<>();
 
         private PageContentCollector(PDPage page, int pageNumber, List<Map<String, Object>> evidence) {
             super(page);
@@ -176,6 +177,15 @@ public final class PdfBoxAnalyzer {
                     }
                     if (xObject instanceof PDTransparencyGroup) {
                         collectTransparencyGroup(resourceName);
+                    }
+                    if (xObject instanceof org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject) {
+                        resourcePath.add(resourceName.getName());
+                        try {
+                            super.processOperator(operator, operands);
+                        } finally {
+                            resourcePath.remove(resourcePath.size() - 1);
+                        }
+                        return;
                     }
                 }
             }
@@ -230,6 +240,7 @@ public final class PdfBoxAnalyzer {
             item.put("category", "transparency");
             item.put("page", pageNumber);
             item.put("resource_name", resourceName.getName());
+            item.put("resource_path", resourcePath(resourceName));
             return item;
         }
 
@@ -252,6 +263,7 @@ public final class PdfBoxAnalyzer {
             item.put("category", "images");
             item.put("page", pageNumber);
             item.put("resource_name", resourceName.getName());
+            item.put("resource_path", resourcePath(resourceName));
             item.put("pixel_width", pixelWidth);
             item.put("pixel_height", pixelHeight);
             item.put("drawn_width_pt", drawnWidthPt);
@@ -262,6 +274,15 @@ public final class PdfBoxAnalyzer {
             item.put("color_space_name", colorSpace.getName());
             item.put("color_space_family", colorSpaceFamily(colorSpace));
             evidence.add(item);
+        }
+
+        private String resourcePath(COSName resourceName) {
+            if (resourcePath.isEmpty()) {
+                return resourceName.getName();
+            }
+            List<String> segments = new ArrayList<>(resourcePath);
+            segments.add(resourceName.getName());
+            return String.join("/", segments);
         }
 
         private String colorSpaceFamily(PDColorSpace colorSpace) {

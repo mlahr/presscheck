@@ -1,16 +1,20 @@
 package com.pdfdancer.preflight.pdfbox;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDFormContentStream;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
 import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.util.Matrix;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -132,6 +136,99 @@ class PdfBoxAnalyzerTest {
     }
 
     @Test
+    void reportsImageEffectiveResolutionInsideFormXObject() throws Exception {
+        File pdf = tempDir.resolve("form-image.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDFormXObject form = new PDFormXObject(document);
+            form.setResources(new PDResources());
+            form.setBBox(new PDRectangle(1, 1));
+            PDImageXObject image = createBlueImage(document, 300, 300);
+            try (PDFormContentStream content = new PDFormContentStream(form)) {
+                content.drawImage(image, 0, 0, 1, 1);
+            }
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.saveGraphicsState();
+                content.transform(new Matrix(216, 0, 0, 216, 72, 500));
+                content.drawForm(form);
+                content.restoreGraphicsState();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "images.effective_resolution");
+        assertEquals("Im1", evidence.get("resource_name"));
+        assertEquals("Form1/Im1", evidence.get("resource_path"));
+        assertDoubleEquals(216.0, evidence.get("drawn_width_pt"));
+        assertDoubleEquals(216.0, evidence.get("drawn_height_pt"));
+        assertDoubleEquals(100.0, evidence.get("min_dpi"));
+    }
+
+    @Test
+    void reportsTransparencyInsideFormXObject() throws Exception {
+        File pdf = tempDir.resolve("form-transparency.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDFormXObject form = new PDFormXObject(document);
+            form.setResources(new PDResources());
+            form.setBBox(new PDRectangle(100, 100));
+            PDExtendedGraphicsState graphicsState = new PDExtendedGraphicsState();
+            graphicsState.setNonStrokingAlphaConstant(0.5f);
+            try (PDFormContentStream content = new PDFormContentStream(form)) {
+                content.setGraphicsStateParameters(graphicsState);
+                content.addRect(0, 0, 100, 100);
+                content.fill();
+            }
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.drawForm(form);
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "transparency.features");
+        assertEquals("gs1", evidence.get("resource_name"));
+        assertEquals("Form1/gs1", evidence.get("resource_path"));
+        assertEquals(List.of("non_stroking_alpha"), evidence.get("features"));
+    }
+
+    @Test
+    void ignoresUnusedImageResourceInsideFormXObject() throws Exception {
+        File pdf = tempDir.resolve("form-unused-image.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDFormXObject form = new PDFormXObject(document);
+            form.setResources(new PDResources());
+            form.setBBox(new PDRectangle(100, 100));
+            form.getResources().add(createBlueImage(document, 300, 300));
+            try (PDFormContentStream content = new PDFormContentStream(form)) {
+                content.addRect(0, 0, 100, 100);
+                content.fill();
+            }
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.drawForm(form);
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        assertFalse(hasEvidenceFor(result, "images.effective_resolution"));
+    }
+
+    @Test
     void reportsAppliedNonStrokingAlpha() throws Exception {
         File pdf = tempDir.resolve("transparent-fill.pdf").toFile();
         try (PDDocument document = new PDDocument()) {
@@ -207,23 +304,26 @@ class PdfBoxAnalyzerTest {
 
     private File writeImagePdf(String name, int pixelWidth, int pixelHeight, float drawnWidthPt, float drawnHeightPt) throws Exception {
         File pdf = tempDir.resolve(name).toFile();
-        BufferedImage bufferedImage = new BufferedImage(pixelWidth, pixelHeight, BufferedImage.TYPE_INT_RGB);
-        for (int y = 0; y < pixelHeight; y++) {
-            for (int x = 0; x < pixelWidth; x++) {
-                bufferedImage.setRGB(x, y, Color.BLUE.getRGB());
-            }
-        }
-
         try (PDDocument document = new PDDocument()) {
             PDPage page = new PDPage();
             document.addPage(page);
-            PDImageXObject image = LosslessFactory.createFromImage(document, bufferedImage);
+            PDImageXObject image = createBlueImage(document, pixelWidth, pixelHeight);
             try (PDPageContentStream content = new PDPageContentStream(document, page)) {
                 content.drawImage(image, 72, 500, drawnWidthPt, drawnHeightPt);
             }
             document.save(pdf);
         }
         return pdf;
+    }
+
+    private PDImageXObject createBlueImage(PDDocument document, int pixelWidth, int pixelHeight) throws Exception {
+        BufferedImage bufferedImage = new BufferedImage(pixelWidth, pixelHeight, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < pixelHeight; y++) {
+            for (int x = 0; x < pixelWidth; x++) {
+                bufferedImage.setRGB(x, y, Color.BLUE.getRGB());
+            }
+        }
+        return LosslessFactory.createFromImage(document, bufferedImage);
     }
 
     private Map<String, Object> firstEvidenceFor(Map<String, Object> result, String checkId) {
