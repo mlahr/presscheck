@@ -13,6 +13,7 @@ target config -> analyzers -> findings -> severity evaluation -> JSON stdout -> 
 - Python 3.13+
 - uv
 - Ghostscript available as `gs`
+- Java 17+
 
 ## Run
 
@@ -32,6 +33,35 @@ uv run pdfdancer-preflight \
   /path/to/file.pdf
 ```
 
+## PDFBox Analyzer
+
+The Python CLI calls PDFBox through an external Java analyzer jar.
+
+Build it before running targets that enable PDFBox-backed checks:
+
+```bash
+./gradlew :analyzers:pdfbox:fatJar
+```
+
+Default jar path:
+
+```text
+analyzers/pdfbox/build/libs/pdfbox-analyzer.jar
+```
+
+Override the jar path:
+
+```bash
+PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR=/path/to/pdfbox-analyzer.jar \
+  uv run pdfdancer-preflight --target examples/targets/print-basic.yml input.pdf
+```
+
+Run the analyzer directly:
+
+```bash
+java -jar analyzers/pdfbox/build/libs/pdfbox-analyzer.jar input.pdf
+```
+
 ## Tests
 
 Run the test suite:
@@ -40,9 +70,16 @@ Run the test suite:
 uv run pytest
 ```
 
+Run the Java analyzer tests:
+
+```bash
+./gradlew :analyzers:pdfbox:test
+```
+
 ## Current Checks
 
 - `document_integrity.ghostscript_processable`
+- `fonts.non_embedded`
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
 
@@ -56,6 +93,10 @@ Example:
 fail_at: error
 checks:
   document_integrity.ghostscript_processable:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  fonts.non_embedded:
     enabled: true
     severity: error
     timeout_seconds: 60

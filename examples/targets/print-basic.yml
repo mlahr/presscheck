@@ -4,6 +4,10 @@ checks:
     enabled: true
     severity: error
     timeout_seconds: 60
+  fonts.non_embedded:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
   geometry.page_boxes_present:
     enabled: true
     severity: error
@@ -17,4 +21,3 @@ checks:
     expected_width_pt: 612
     expected_height_pt: 792
     tolerance_pt: 0.5
-

@@ -1,5 +1,8 @@
 .venv/
 .pytest_cache/
+.gradle/
+build/
+**/build/
 __pycache__/
 *.py[cod]
 /.idea

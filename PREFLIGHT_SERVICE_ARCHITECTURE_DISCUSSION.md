@@ -111,6 +111,8 @@ veraPDF has no planned role.
 
 PDFBox is the main structural inspection library.
 
+PDFBox runs as an external Java analyzer CLI/JAR. It emits evidence only; the Python coordinator owns target config, severity assignment, final findings, JSON output, and exit codes.
+
 Expected PDFBox role:
 
 - Fonts
