@@ -8,7 +8,14 @@ import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSFloat;
+import org.apache.pdfbox.cos.COSInteger;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
+import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
+import org.apache.pdfbox.pdmodel.graphics.color.PDSeparation;
 import org.apache.pdfbox.pdmodel.graphics.color.PDOutputIntent;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
@@ -379,6 +386,94 @@ class PdfBoxAnalyzerTest {
     }
 
     @Test
+    void reportsRegistrationColorUsage() throws Exception {
+        File pdf = tempDir.resolve("registration-color.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            page.setResources(new PDResources());
+            page.getResources().put(COSName.getPDFName("CS1"), separationColorSpace("All"));
+            document.addPage(page);
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.setNonStrokingColor(new PDColor(new float[]{1.0f}, separationColorSpace("All")));
+                content.addRect(72, 500, 100, 100);
+                content.fill();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "color.special_color_usage");
+        assertEquals("color", evidence.get("category"));
+        assertEquals(1, evidence.get("page"));
+        assertEquals("path_fill", evidence.get("paint_operation"));
+        assertEquals("non_stroking", evidence.get("paint_role"));
+        assertEquals("Separation", evidence.get("color_space_family"));
+        assertEquals(List.of("All"), evidence.get("colorants"));
+        assertEquals(1, evidence.get("occurrences"));
+    }
+
+    @Test
+    void reportsSpotColorUsageInsideFormXObject() throws Exception {
+        File pdf = tempDir.resolve("form-spot-color.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDFormXObject form = new PDFormXObject(document);
+            form.setResources(new PDResources());
+            form.getResources().put(COSName.getPDFName("CS1"), separationColorSpace("SpotGreen"));
+            form.setBBox(new PDRectangle(100, 100));
+            try (PDFormContentStream content = new PDFormContentStream(form)) {
+                content.setNonStrokingColor(new PDColor(new float[]{0.5f}, separationColorSpace("SpotGreen")));
+                content.addRect(0, 0, 100, 100);
+                content.fill();
+            }
+
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.drawForm(form);
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "color.special_color_usage");
+        assertEquals("Form1", evidence.get("resource_path"));
+        assertEquals(List.of("SpotGreen"), evidence.get("colorants"));
+    }
+
+    @Test
+    void reportsAppliedOverprint() throws Exception {
+        File pdf = tempDir.resolve("overprint.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            document.addPage(page);
+
+            PDExtendedGraphicsState graphicsState = new PDExtendedGraphicsState();
+            graphicsState.setNonStrokingOverprintControl(true);
+            graphicsState.setOverprintMode(1);
+            try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                content.setGraphicsStateParameters(graphicsState);
+                content.addRect(72, 500, 100, 100);
+                content.fill();
+            }
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "graphics.overprint_usage");
+        assertEquals("graphics", evidence.get("category"));
+        assertEquals(1, evidence.get("page"));
+        assertEquals("path_fill", evidence.get("paint_operation"));
+        assertEquals("non_stroking", evidence.get("paint_role"));
+        assertEquals(1, evidence.get("overprint_mode"));
+        assertEquals(1, evidence.get("occurrences"));
+    }
+
+    @Test
     void ignoresUnusedTransparencyGraphicsState() throws Exception {
         File pdf = tempDir.resolve("unused-transparent-state.pdf").toFile();
         try (PDDocument document = new PDDocument()) {
@@ -465,5 +560,32 @@ class PdfBoxAnalyzerTest {
 
     private byte[] minimalRgbIccProfile() {
         return java.awt.color.ICC_Profile.getInstance(java.awt.color.ColorSpace.CS_sRGB).getData();
+    }
+
+    private PDSeparation separationColorSpace(String colorantName) throws Exception {
+        COSArray colorSpace = new COSArray();
+        colorSpace.add(COSName.SEPARATION);
+        colorSpace.add(COSName.getPDFName(colorantName));
+        colorSpace.add(COSName.DEVICECMYK);
+        colorSpace.add(type2TintTransform());
+        return new PDSeparation(colorSpace);
+    }
+
+    private COSDictionary type2TintTransform() {
+        COSDictionary function = new COSDictionary();
+        function.setInt(COSName.FUNCTION_TYPE, 2);
+        function.setItem(COSName.DOMAIN, cosArray(0, 1));
+        function.setItem(COSName.getPDFName("C0"), cosArray(0, 0, 0, 0));
+        function.setItem(COSName.getPDFName("C1"), cosArray(1, 1, 1, 1));
+        function.setItem(COSName.getPDFName("N"), COSInteger.ONE);
+        return function;
+    }
+
+    private COSArray cosArray(float... values) {
+        COSArray array = new COSArray();
+        for (float value : values) {
+            array.add(new COSFloat(value));
+        }
+        return array;
     }
 }

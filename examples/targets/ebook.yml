@@ -36,6 +36,22 @@ checks:
     enabled: false
     severity: warning
     timeout_seconds: 60
+  color.registration_color_misuse:
+    enabled: false
+    severity: warning
+    timeout_seconds: 60
+  color.spot_color_policy:
+    enabled: false
+    severity: info
+    allowed_colorants: []
+    ignored_colorants:
+      - All
+      - None
+    timeout_seconds: 60
+  graphics.overprint_policy:
+    enabled: false
+    severity: info
+    timeout_seconds: 60
   transparency.live_transparency_policy:
     enabled: false
     severity: info

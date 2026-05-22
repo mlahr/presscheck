@@ -45,6 +45,24 @@ def _target() -> TargetConfig:
                 severity=Severity.error,
                 params={},
             ),
+            "color.registration_color_misuse": CheckConfig(
+                check_id="color.registration_color_misuse",
+                enabled=True,
+                severity=Severity.error,
+                params={},
+            ),
+            "color.spot_color_policy": CheckConfig(
+                check_id="color.spot_color_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"allowed_colorants": [], "ignored_colorants": ["All", "None"]},
+            ),
+            "graphics.overprint_policy": CheckConfig(
+                check_id="graphics.overprint_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={},
+            ),
             "transparency.live_transparency_policy": CheckConfig(
                 check_id="transparency.live_transparency_policy",
                 enabled=True,
@@ -654,6 +672,253 @@ def test_pdfbox_adapter_allows_present_output_intent(tmp_path: Path, monkeypatch
                 severity=Severity.error,
                 params={},
             )
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_maps_registration_color_misuse(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "color.special_color_usage",
+      "category": "color",
+      "page": 1,
+      "resource_path": "Form1",
+      "paint_operation": "path_fill",
+      "paint_role": "non_stroking",
+      "color_space_name": "Separation",
+      "color_space_family": "Separation",
+      "colorants": ["All"],
+      "occurrences": 3
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "color.registration_color_misuse": CheckConfig(
+                check_id="color.registration_color_misuse",
+                enabled=True,
+                severity=Severity.error,
+                params={},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "color.registration_color_misuse"
+    assert findings[0].category == "color"
+    assert findings[0].severity == Severity.error
+    assert findings[0].page == 1
+    assert findings[0].object_ref == "Form1"
+    assert findings[0].observed == {
+        "paint_operation": "path_fill",
+        "paint_role": "non_stroking",
+        "color_space_name": "Separation",
+        "color_space_family": "Separation",
+        "colorants": ["All"],
+        "occurrences": 3,
+    }
+
+
+def test_pdfbox_adapter_maps_spot_color_policy(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "color.special_color_usage",
+      "category": "color",
+      "page": 1,
+      "paint_operation": "path_fill",
+      "paint_role": "non_stroking",
+      "color_space_name": "DeviceN",
+      "color_space_family": "DeviceN",
+      "colorants": ["BrandBlue", "AllowedSpot", "All"],
+      "occurrences": 2
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "color.spot_color_policy": CheckConfig(
+                check_id="color.spot_color_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"allowed_colorants": ["AllowedSpot"], "ignored_colorants": ["All", "None"]},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "color.spot_color_policy"
+    assert findings[0].category == "color"
+    assert findings[0].severity == Severity.warning
+    assert findings[0].observed == {
+        "paint_operation": "path_fill",
+        "paint_role": "non_stroking",
+        "color_space_name": "DeviceN",
+        "color_space_family": "DeviceN",
+        "colorants": ["BrandBlue", "AllowedSpot", "All"],
+        "disallowed_colorants": ["BrandBlue"],
+        "occurrences": 2,
+    }
+    assert findings[0].threshold == {
+        "allowed_colorants": ["AllowedSpot"],
+        "ignored_colorants": ["All", "None"],
+    }
+
+
+def test_pdfbox_adapter_maps_overprint_policy(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "graphics.overprint_usage",
+      "category": "graphics",
+      "page": 1,
+      "resource_path": "Form1",
+      "paint_operation": "path_stroke",
+      "paint_role": "stroking",
+      "overprint_mode": 1,
+      "occurrences": 4
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "graphics.overprint_policy": CheckConfig(
+                check_id="graphics.overprint_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "graphics.overprint_policy"
+    assert findings[0].category == "graphics"
+    assert findings[0].severity == Severity.warning
+    assert findings[0].page == 1
+    assert findings[0].object_ref == "Form1"
+    assert findings[0].observed == {
+        "paint_operation": "path_stroke",
+        "paint_role": "stroking",
+        "overprint_mode": 1,
+        "occurrences": 4,
+    }
+
+
+def test_pdfbox_adapter_skips_print_color_checks_when_disabled(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "color.special_color_usage",
+      "category": "color",
+      "page": 1,
+      "colorants": ["All"],
+      "occurrences": 1
+    },
+    {
+      "check_id": "graphics.overprint_usage",
+      "category": "graphics",
+      "page": 1,
+      "paint_operation": "path_fill",
+      "paint_role": "non_stroking",
+      "overprint_mode": 1,
+      "occurrences": 1
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "color.registration_color_misuse": CheckConfig(
+                check_id="color.registration_color_misuse",
+                enabled=False,
+                severity=Severity.error,
+                params={},
+            ),
+            "color.spot_color_policy": CheckConfig(
+                check_id="color.spot_color_policy",
+                enabled=False,
+                severity=Severity.warning,
+                params={"allowed_colorants": [], "ignored_colorants": ["All", "None"]},
+            ),
+            "graphics.overprint_policy": CheckConfig(
+                check_id="graphics.overprint_policy",
+                enabled=False,
+                severity=Severity.warning,
+                params={},
+            ),
         },
     )
 

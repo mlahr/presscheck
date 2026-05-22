@@ -14,6 +14,7 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
+import org.apache.pdfbox.pdmodel.graphics.color.PDColor;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceCMYK;
 import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceGray;
@@ -27,6 +28,7 @@ import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.form.PDTransparencyGroup;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImage;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.pdmodel.graphics.state.PDGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.apache.pdfbox.util.Matrix;
@@ -153,6 +155,8 @@ public final class PdfBoxAnalyzer {
         private final List<Map<String, Object>> evidence;
         private final List<String> resourcePath = new ArrayList<>();
         private final Map<String, TextSizeGroup> textSizeGroups = new LinkedHashMap<>();
+        private final Map<String, SpecialColorGroup> specialColorGroups = new LinkedHashMap<>();
+        private final Map<String, OverprintGroup> overprintGroups = new LinkedHashMap<>();
 
         private PageContentCollector(PDPage page, int pageNumber, List<Map<String, Object>> evidence) {
             super(page);
@@ -164,6 +168,8 @@ public final class PdfBoxAnalyzer {
         public void processPage(PDPage page) throws IOException {
             super.processPage(page);
             flushTextSizeEvidence();
+            flushSpecialColorEvidence();
+            flushOverprintEvidence();
         }
 
         @Override
@@ -208,6 +214,13 @@ public final class PdfBoxAnalyzer {
         @Override
         protected void showGlyph(Matrix textRenderingMatrix, PDFont font, int code, Vector displacement) throws IOException {
             collectTextSize(textRenderingMatrix, font);
+            RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
+            if (renderingMode.isFill()) {
+                collectPaintState("text_fill", false);
+            }
+            if (renderingMode.isStroke()) {
+                collectPaintState("text_stroke", true);
+            }
             super.showGlyph(textRenderingMatrix, font, code, displacement);
         }
 
@@ -244,6 +257,42 @@ public final class PdfBoxAnalyzer {
                 item.put("subtype", group.subtype);
                 item.put("effective_size_pt", group.effectiveSizePt);
                 item.put("horizontal_size_pt", group.horizontalSizePt);
+                item.put("occurrences", group.occurrences);
+                evidence.add(item);
+            }
+        }
+
+        private void flushSpecialColorEvidence() {
+            for (SpecialColorGroup group : specialColorGroups.values()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("check_id", "color.special_color_usage");
+                item.put("category", "color");
+                item.put("page", pageNumber);
+                if (!group.resourcePath.isEmpty()) {
+                    item.put("resource_path", group.resourcePath);
+                }
+                item.put("paint_operation", group.paintOperation);
+                item.put("paint_role", group.paintRole);
+                item.put("color_space_name", group.colorSpaceName);
+                item.put("color_space_family", group.colorSpaceFamily);
+                item.put("colorants", group.colorants);
+                item.put("occurrences", group.occurrences);
+                evidence.add(item);
+            }
+        }
+
+        private void flushOverprintEvidence() {
+            for (OverprintGroup group : overprintGroups.values()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("check_id", "graphics.overprint_usage");
+                item.put("category", "graphics");
+                item.put("page", pageNumber);
+                if (!group.resourcePath.isEmpty()) {
+                    item.put("resource_path", group.resourcePath);
+                }
+                item.put("paint_operation", group.paintOperation);
+                item.put("paint_role", group.paintRole);
+                item.put("overprint_mode", group.overprintMode);
                 item.put("occurrences", group.occurrences);
                 evidence.add(item);
             }
@@ -374,6 +423,69 @@ public final class PdfBoxAnalyzer {
             item.put("color_space_name", colorSpace.getName());
             item.put("color_space_family", colorSpaceFamily(colorSpace));
             evidence.add(item);
+            collectSpecialColor("image", "non_stroking", resourcePath(resourceName), colorSpace);
+            collectOverprint("image", false, resourcePath(resourceName));
+        }
+
+        private void collectPaintState(String paintOperation, boolean stroking) {
+            PDGraphicsState graphicsState = getGraphicsState();
+            PDColor color = stroking ? graphicsState.getStrokingColor() : graphicsState.getNonStrokingColor();
+            if (color != null) {
+                collectSpecialColor(
+                        paintOperation,
+                        stroking ? "stroking" : "non_stroking",
+                        currentResourcePath(),
+                        color.getColorSpace()
+                );
+            }
+            collectOverprint(paintOperation, stroking, currentResourcePath());
+        }
+
+        private void collectSpecialColor(
+                String paintOperation,
+                String paintRole,
+                String path,
+                PDColorSpace colorSpace
+        ) {
+            List<String> colorants = colorants(colorSpace);
+            if (colorants.isEmpty()) {
+                return;
+            }
+
+            String colorSpaceFamily = colorSpaceFamily(colorSpace);
+            String key = pageNumber + "|" + path + "|" + paintOperation + "|" + paintRole + "|"
+                    + colorSpace.getName() + "|" + colorSpaceFamily + "|" + String.join(",", colorants);
+            SpecialColorGroup group = specialColorGroups.get(key);
+            if (group == null) {
+                group = new SpecialColorGroup(
+                        path,
+                        paintOperation,
+                        paintRole,
+                        colorSpace.getName(),
+                        colorSpaceFamily,
+                        colorants
+                );
+                specialColorGroups.put(key, group);
+            }
+            group.occurrences++;
+        }
+
+        private void collectOverprint(String paintOperation, boolean stroking, String path) {
+            PDGraphicsState graphicsState = getGraphicsState();
+            boolean overprint = stroking ? graphicsState.isOverprint() : graphicsState.isNonStrokingOverprint();
+            if (!overprint) {
+                return;
+            }
+
+            String paintRole = stroking ? "stroking" : "non_stroking";
+            int overprintMode = graphicsState.getOverprintMode();
+            String key = pageNumber + "|" + path + "|" + paintOperation + "|" + paintRole + "|" + overprintMode;
+            OverprintGroup group = overprintGroups.get(key);
+            if (group == null) {
+                group = new OverprintGroup(path, paintOperation, paintRole, overprintMode);
+                overprintGroups.put(key, group);
+            }
+            group.occurrences++;
         }
 
         private String resourcePath(COSName resourceName) {
@@ -430,6 +542,16 @@ public final class PdfBoxAnalyzer {
             return "Other";
         }
 
+        private List<String> colorants(PDColorSpace colorSpace) {
+            if (colorSpace instanceof PDSeparation separation) {
+                return List.of(separation.getColorantName());
+            }
+            if (colorSpace instanceof PDDeviceN deviceN) {
+                return deviceN.getColorantNames();
+            }
+            return List.of();
+        }
+
         @Override
         public void drawImage(PDImage pdImage) {
             // Direct image XObjects are handled in processOperator so the resource name is available.
@@ -470,14 +592,18 @@ public final class PdfBoxAnalyzer {
 
         @Override
         public void strokePath() {
+            collectPaintState("path_stroke", true);
         }
 
         @Override
         public void fillPath(int windingRule) {
+            collectPaintState("path_fill", false);
         }
 
         @Override
         public void fillAndStrokePath(int windingRule) {
+            collectPaintState("path_fill", false);
+            collectPaintState("path_stroke", true);
         }
 
         @Override
@@ -504,6 +630,49 @@ public final class PdfBoxAnalyzer {
                 this.resourcePath = resourcePath;
                 this.effectiveSizePt = effectiveSizePt;
                 this.horizontalSizePt = horizontalSizePt;
+                this.occurrences = 0;
+            }
+        }
+
+        private static final class SpecialColorGroup {
+            private final String resourcePath;
+            private final String paintOperation;
+            private final String paintRole;
+            private final String colorSpaceName;
+            private final String colorSpaceFamily;
+            private final List<String> colorants;
+            private int occurrences;
+
+            private SpecialColorGroup(
+                    String resourcePath,
+                    String paintOperation,
+                    String paintRole,
+                    String colorSpaceName,
+                    String colorSpaceFamily,
+                    List<String> colorants
+            ) {
+                this.resourcePath = resourcePath;
+                this.paintOperation = paintOperation;
+                this.paintRole = paintRole;
+                this.colorSpaceName = colorSpaceName;
+                this.colorSpaceFamily = colorSpaceFamily;
+                this.colorants = colorants;
+                this.occurrences = 0;
+            }
+        }
+
+        private static final class OverprintGroup {
+            private final String resourcePath;
+            private final String paintOperation;
+            private final String paintRole;
+            private final int overprintMode;
+            private int occurrences;
+
+            private OverprintGroup(String resourcePath, String paintOperation, String paintRole, int overprintMode) {
+                this.resourcePath = resourcePath;
+                this.paintOperation = paintOperation;
+                this.paintRole = paintRole;
+                this.overprintMode = overprintMode;
                 this.occurrences = 0;
             }
         }

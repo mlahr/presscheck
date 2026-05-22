@@ -155,6 +155,9 @@ jq '.findings[]' report.json
 - `images.low_effective_resolution`: page and Form XObject image placements
 - `color.image_color_space_policy`: target-driven policy for image placement color spaces
 - `color.output_intent_required`: target-driven document-level OutputIntent requirement
+- `color.registration_color_misuse`: painted use of registration color `/All`
+- `color.spot_color_policy`: target-driven allow/ignore policy for `Separation` and `DeviceN` colorants
+- `graphics.overprint_policy`: painted content that uses stroking or non-stroking overprint
 - `transparency.live_transparency_policy`: target-driven policy for applied live transparency features
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
@@ -210,6 +213,22 @@ checks:
   color.output_intent_required:
     enabled: true
     severity: error
+    timeout_seconds: 60
+  color.registration_color_misuse:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  color.spot_color_policy:
+    enabled: true
+    severity: warning
+    allowed_colorants: []
+    ignored_colorants:
+      - All
+      - None
+    timeout_seconds: 60
+  graphics.overprint_policy:
+    enabled: true
+    severity: warning
     timeout_seconds: 60
   transparency.live_transparency_policy:
     enabled: true

@@ -18,11 +18,16 @@ IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
 OUTPUT_INTENT_REQUIRED_CHECK = "color.output_intent_required"
 LIVE_TRANSPARENCY_POLICY_CHECK = "transparency.live_transparency_policy"
 OBJECT_BOUNDS_WITHIN_BOX_CHECK = "geometry.object_bounds_within_box"
+REGISTRATION_COLOR_MISUSE_CHECK = "color.registration_color_misuse"
+SPOT_COLOR_POLICY_CHECK = "color.spot_color_policy"
+OVERPRINT_POLICY_CHECK = "graphics.overprint_policy"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 TEXT_SIZE_EVIDENCE = "fonts.text_size"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
 TRANSPARENCY_FEATURES_EVIDENCE = "transparency.features"
 OBJECT_BOUNDS_EVIDENCE = "geometry.object_bounds"
+SPECIAL_COLOR_USAGE_EVIDENCE = "color.special_color_usage"
+OVERPRINT_USAGE_EVIDENCE = "graphics.overprint_usage"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
 BOX_KEYS = {
@@ -45,6 +50,9 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(OUTPUT_INTENT_REQUIRED_CHECK),
             target.check(LIVE_TRANSPARENCY_POLICY_CHECK),
             target.check(OBJECT_BOUNDS_WITHIN_BOX_CHECK),
+            target.check(REGISTRATION_COLOR_MISUSE_CHECK),
+            target.check(SPOT_COLOR_POLICY_CHECK),
+            target.check(OVERPRINT_POLICY_CHECK),
         )
         if check is not None
     ]
@@ -138,10 +146,28 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             )
         )
 
+    special_color_evidence = [item for item in evidence if _is_special_color_usage_evidence(item)]
+    registration_color_check = target.check(REGISTRATION_COLOR_MISUSE_CHECK)
+    if registration_color_check is not None:
+        findings.extend(
+            _registration_color_misuse_findings(special_color_evidence, registration_color_check.severity)
+        )
+
+    spot_color_check = target.check(SPOT_COLOR_POLICY_CHECK)
+    if spot_color_check is not None:
+        findings.extend(
+            _spot_color_policy_findings(special_color_evidence, spot_color_check.severity, spot_color_check.params)
+        )
+
+    overprint_check = target.check(OVERPRINT_POLICY_CHECK)
+    overprint_evidence = [item for item in evidence if _is_overprint_usage_evidence(item)]
+    if overprint_check is not None:
+        findings.extend(_overprint_policy_findings(overprint_evidence, overprint_check.severity))
+
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
         "text_size_evidence=%s output_intent_evidence=%s transparency_evidence=%s "
-        "object_bounds_evidence=%s findings=%s",
+        "object_bounds_evidence=%s special_color_evidence=%s overprint_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
@@ -149,6 +175,8 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         len(output_intent_evidence),
         len(transparency_evidence),
         len(object_bounds_evidence),
+        len(special_color_evidence),
+        len(overprint_evidence),
         len(findings),
     )
     return findings
@@ -183,6 +211,14 @@ def _is_transparency_features_evidence(item: Any) -> bool:
 
 def _is_object_bounds_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == OBJECT_BOUNDS_EVIDENCE
+
+
+def _is_special_color_usage_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == SPECIAL_COLOR_USAGE_EVIDENCE
+
+
+def _is_overprint_usage_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == OVERPRINT_USAGE_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -529,6 +565,118 @@ def _object_bounds_within_box_findings(
     return findings
 
 
+def _registration_color_misuse_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    findings = []
+    for item in evidence:
+        colorants = _string_list(item.get("colorants"))
+        if "All" not in colorants:
+            continue
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=REGISTRATION_COLOR_MISUSE_CHECK,
+                category="color",
+                severity=severity,
+                message="Registration color is used in painted content.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=_resource_ref(item),
+                observed={
+                    "paint_operation": item.get("paint_operation"),
+                    "paint_role": item.get("paint_role"),
+                    "color_space_name": item.get("color_space_name"),
+                    "color_space_family": item.get("color_space_family"),
+                    "colorants": colorants,
+                    "occurrences": _occurrences(item),
+                },
+            )
+        )
+
+    findings.sort(
+        key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["paint_operation"] or "")
+    )
+    return findings
+
+
+def _spot_color_policy_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    allowed = set(_string_list(params.get("allowed_colorants")))
+    ignored = set(_string_list(params.get("ignored_colorants")))
+    findings = []
+    for item in evidence:
+        colorants = _string_list(item.get("colorants"))
+        disallowed = sorted(colorant for colorant in colorants if colorant not in allowed and colorant not in ignored)
+        if not disallowed:
+            continue
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=SPOT_COLOR_POLICY_CHECK,
+                category="color",
+                severity=severity,
+                message="Special colorants are not allowed by the target.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=_resource_ref(item),
+                observed={
+                    "paint_operation": item.get("paint_operation"),
+                    "paint_role": item.get("paint_role"),
+                    "color_space_name": item.get("color_space_name"),
+                    "color_space_family": item.get("color_space_family"),
+                    "colorants": colorants,
+                    "disallowed_colorants": disallowed,
+                    "occurrences": _occurrences(item),
+                },
+                threshold={
+                    "allowed_colorants": sorted(allowed),
+                    "ignored_colorants": sorted(ignored),
+                },
+            )
+        )
+
+    findings.sort(
+        key=lambda finding: (
+            finding.page or 0,
+            finding.object_ref or "",
+            finding.observed["paint_operation"] or "",
+            finding.observed["disallowed_colorants"],
+        )
+    )
+    return findings
+
+
+def _overprint_policy_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    findings = []
+    for item in evidence:
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=OVERPRINT_POLICY_CHECK,
+                category="graphics",
+                severity=severity,
+                message="Painted content uses overprint.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=_resource_ref(item),
+                observed={
+                    "paint_operation": item.get("paint_operation"),
+                    "paint_role": item.get("paint_role"),
+                    "overprint_mode": item.get("overprint_mode"),
+                    "occurrences": _occurrences(item),
+                },
+            )
+        )
+
+    findings.sort(
+        key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["paint_operation"] or "")
+    )
+    return findings
+
+
 def _read_page_boxes(pdf_path: Path, pdf_box_key: str) -> dict[int, dict[str, float]]:
     try:
         reader = PdfReader(str(pdf_path))
@@ -595,6 +743,17 @@ def _number_or_none(value: Any) -> float | None:
     if isinstance(value, int | float):
         return float(value)
     return None
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _occurrences(item: dict[str, Any]) -> int:
+    occurrences = item.get("occurrences")
+    return occurrences if isinstance(occurrences, int) else 1
 
 
 def _resource_ref(item: dict[str, Any]) -> str | None:
