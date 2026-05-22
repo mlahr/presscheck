@@ -6,6 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from pypdf import PdfReader
 
@@ -24,6 +25,12 @@ OBJECT_BOUNDS_WITHIN_BOX_CHECK = "geometry.object_bounds_within_box"
 REGISTRATION_COLOR_MISUSE_CHECK = "color.registration_color_misuse"
 SPOT_COLOR_POLICY_CHECK = "color.spot_color_policy"
 OVERPRINT_POLICY_CHECK = "graphics.overprint_policy"
+ANNOTATION_POLICY_CHECK = "interactive.annotation_policy"
+LINK_URI_POLICY_CHECK = "interactive.link_uri_policy"
+ANNOTATION_BOUNDS_CHECK = "interactive.annotation_bounds_within_box"
+JAVASCRIPT_POLICY_CHECK = "interactive.javascript_policy"
+EMBEDDED_FILES_POLICY_CHECK = "interactive.embedded_files_policy"
+FORM_POLICY_CHECK = "interactive.form_policy"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 TEXT_SIZE_EVIDENCE = "fonts.text_size"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
@@ -31,6 +38,10 @@ TRANSPARENCY_FEATURES_EVIDENCE = "transparency.features"
 OBJECT_BOUNDS_EVIDENCE = "geometry.object_bounds"
 SPECIAL_COLOR_USAGE_EVIDENCE = "color.special_color_usage"
 OVERPRINT_USAGE_EVIDENCE = "graphics.overprint_usage"
+ANNOTATIONS_EVIDENCE = "interactive.annotations"
+DOCUMENT_ACTIONS_EVIDENCE = "interactive.document_actions"
+EMBEDDED_FILES_EVIDENCE = "interactive.embedded_files"
+FORMS_EVIDENCE = "interactive.forms"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
 BOX_KEYS = {
@@ -59,6 +70,12 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(REGISTRATION_COLOR_MISUSE_CHECK),
             target.check(SPOT_COLOR_POLICY_CHECK),
             target.check(OVERPRINT_POLICY_CHECK),
+            target.check(ANNOTATION_POLICY_CHECK),
+            target.check(LINK_URI_POLICY_CHECK),
+            target.check(ANNOTATION_BOUNDS_CHECK),
+            target.check(JAVASCRIPT_POLICY_CHECK),
+            target.check(EMBEDDED_FILES_POLICY_CHECK),
+            target.check(FORM_POLICY_CHECK),
         )
         if check is not None
     ]
@@ -182,10 +199,48 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     if overprint_check is not None:
         findings.extend(_overprint_policy_findings(overprint_evidence, overprint_check.severity))
 
+    annotations_evidence = [item for item in evidence if _is_annotations_evidence(item)]
+    annotation_check = target.check(ANNOTATION_POLICY_CHECK)
+    if annotation_check is not None:
+        findings.extend(_annotation_policy_findings(annotations_evidence, annotation_check.params))
+
+    link_uri_check = target.check(LINK_URI_POLICY_CHECK)
+    if link_uri_check is not None:
+        findings.extend(_link_uri_policy_findings(annotations_evidence, link_uri_check.severity, link_uri_check.params))
+
+    annotation_bounds_check = target.check(ANNOTATION_BOUNDS_CHECK)
+    if annotation_bounds_check is not None:
+        findings.extend(
+            _annotation_bounds_findings(
+                pdf_path,
+                annotations_evidence,
+                annotation_bounds_check.severity,
+                annotation_bounds_check.params,
+            )
+        )
+
+    document_actions_evidence = [item for item in evidence if _is_document_actions_evidence(item)]
+    javascript_check = target.check(JAVASCRIPT_POLICY_CHECK)
+    if javascript_check is not None:
+        findings.extend(
+            _javascript_policy_findings(annotations_evidence, document_actions_evidence, javascript_check.severity)
+        )
+
+    embedded_files_check = target.check(EMBEDDED_FILES_POLICY_CHECK)
+    embedded_files_evidence = [item for item in evidence if _is_embedded_files_evidence(item)]
+    if embedded_files_check is not None:
+        findings.extend(_embedded_files_policy_findings(embedded_files_evidence, embedded_files_check.severity))
+
+    form_check = target.check(FORM_POLICY_CHECK)
+    forms_evidence = [item for item in evidence if _is_forms_evidence(item)]
+    if form_check is not None:
+        findings.extend(_form_policy_findings(forms_evidence, form_check.severity))
+
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
         "text_size_evidence=%s output_intent_evidence=%s transparency_evidence=%s "
-        "object_bounds_evidence=%s special_color_evidence=%s overprint_evidence=%s findings=%s",
+        "object_bounds_evidence=%s special_color_evidence=%s overprint_evidence=%s "
+        "annotations_evidence=%s document_actions_evidence=%s embedded_files_evidence=%s forms_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
@@ -195,6 +250,10 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         len(object_bounds_evidence),
         len(special_color_evidence),
         len(overprint_evidence),
+        len(annotations_evidence),
+        len(document_actions_evidence),
+        len(embedded_files_evidence),
+        len(forms_evidence),
         len(findings),
     )
     return findings
@@ -237,6 +296,22 @@ def _is_special_color_usage_evidence(item: Any) -> bool:
 
 def _is_overprint_usage_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == OVERPRINT_USAGE_EVIDENCE
+
+
+def _is_annotations_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == ANNOTATIONS_EVIDENCE
+
+
+def _is_document_actions_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == DOCUMENT_ACTIONS_EVIDENCE
+
+
+def _is_embedded_files_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == EMBEDDED_FILES_EVIDENCE
+
+
+def _is_forms_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == FORMS_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -782,6 +857,205 @@ def _overprint_policy_findings(evidence: list[dict[str, Any]], severity: Severit
     return findings
 
 
+def _annotation_policy_findings(evidence: list[dict[str, Any]], params: dict[str, Any]) -> list[Finding]:
+    severity_by_subtype = params.get("severity_by_subtype")
+    if not isinstance(severity_by_subtype, dict):
+        raise ValueError(f"check '{ANNOTATION_POLICY_CHECK}' requires mapping parameter 'severity_by_subtype'")
+
+    findings = []
+    for item in evidence:
+        subtype = item.get("subtype")
+        if not isinstance(subtype, str):
+            continue
+        severity_raw = severity_by_subtype.get(subtype, severity_by_subtype.get("Other"))
+        if severity_raw is None:
+            continue
+        if not isinstance(severity_raw, str):
+            raise ValueError(
+                f"check '{ANNOTATION_POLICY_CHECK}' severity for subtype '{subtype}' must be null or a string"
+            )
+        severity = Severity.parse(severity_raw)
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=ANNOTATION_POLICY_CHECK,
+                category="interactive",
+                severity=severity,
+                message=f"PDF contains annotation subtype {subtype}.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                observed=_annotation_observed(item),
+                threshold={"severity_by_subtype": {subtype: severity.name}},
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.observed["subtype"]))
+    return findings
+
+
+def _link_uri_policy_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    allowed_schemes = {scheme.lower() for scheme in _string_list(params.get("allowed_schemes"))}
+    disallow_all = params.get("disallow_all") is True
+    findings = []
+    for item in evidence:
+        if item.get("subtype") != "Link":
+            continue
+        uri = item.get("uri")
+        if not isinstance(uri, str):
+            continue
+        scheme = urlsplit(uri).scheme.lower()
+        if not disallow_all and scheme in allowed_schemes:
+            continue
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=LINK_URI_POLICY_CHECK,
+                category="interactive",
+                severity=severity,
+                message="Link annotation URI is not allowed by the target.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                observed=_annotation_observed(item) | {"uri": uri, "uri_scheme": scheme},
+                threshold={"allowed_schemes": sorted(allowed_schemes), "disallow_all": disallow_all},
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.observed["uri_scheme"], finding.observed["uri"]))
+    return findings
+
+
+def _annotation_bounds_findings(
+    pdf_path: Path,
+    evidence: list[dict[str, Any]],
+    severity: Severity,
+    params: dict[str, Any],
+) -> list[Finding]:
+    box_name = str(params.get("box", "CropBox"))
+    pdf_box_key = BOX_KEYS.get(box_name)
+    if pdf_box_key is None:
+        raise ValueError(f"check '{ANNOTATION_BOUNDS_CHECK}' has unsupported box '{box_name}'")
+    tolerance = float(params.get("tolerance_pt", 0))
+
+    page_boxes = _read_page_boxes(pdf_path, pdf_box_key)
+    findings = []
+    for item in evidence:
+        page = item.get("page")
+        if not isinstance(page, int):
+            continue
+        box_bounds = page_boxes.get(page)
+        if box_bounds is None:
+            continue
+        annotation_bounds = _bounds_or_none(item.get("rectangle"))
+        if annotation_bounds is None:
+            continue
+        outside = _outside_amounts(annotation_bounds, box_bounds, tolerance)
+        if not outside:
+            continue
+
+        findings.append(
+            Finding(
+                check_id=ANNOTATION_BOUNDS_CHECK,
+                category="interactive",
+                severity=severity,
+                message=f"Annotation extends outside {box_name}.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page,
+                observed=_annotation_observed(item)
+                | {
+                    "box": box_name,
+                    "box_bounds_pt": box_bounds,
+                    "outside": outside,
+                },
+                threshold={"box": box_name, "tolerance_pt": tolerance},
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.observed["subtype"]))
+    return findings
+
+
+def _javascript_policy_findings(
+    annotations: list[dict[str, Any]],
+    document_actions: list[dict[str, Any]],
+    severity: Severity,
+) -> list[Finding]:
+    findings = []
+    for item in [*annotations, *document_actions]:
+        if item.get("has_javascript") is not True and item.get("action_subtype") != "JavaScript":
+            continue
+        page = item.get("page")
+        findings.append(
+            Finding(
+                check_id=JAVASCRIPT_POLICY_CHECK,
+                category="interactive",
+                severity=severity,
+                message="PDF contains JavaScript action.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                observed={
+                    "scope": item.get("scope", "page"),
+                    "location": item.get("location"),
+                    "subtype": item.get("subtype"),
+                    "action_subtype": item.get("action_subtype"),
+                    "has_javascript": True,
+                },
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, str(finding.observed["location"])))
+    return findings
+
+
+def _embedded_files_policy_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    findings = []
+    for item in evidence:
+        count = item.get("count")
+        if not isinstance(count, int) or count <= 0:
+            continue
+        findings.append(
+            Finding(
+                check_id=EMBEDDED_FILES_POLICY_CHECK,
+                category="interactive",
+                severity=severity,
+                message="PDF contains embedded files.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                observed={"count": count, "names": _string_list(item.get("names"))},
+            )
+        )
+
+    return findings
+
+
+def _form_policy_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
+    findings = []
+    for item in evidence:
+        findings.append(
+            Finding(
+                check_id=FORM_POLICY_CHECK,
+                category="interactive",
+                severity=severity,
+                message="PDF contains interactive form structures.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                observed={
+                    "field_count": item.get("field_count"),
+                    "has_xfa": item.get("has_xfa"),
+                    "signatures_exist": item.get("signatures_exist"),
+                    "append_only": item.get("append_only"),
+                },
+            )
+        )
+
+    return findings
+
+
 def _read_page_boxes(pdf_path: Path, pdf_box_key: str) -> dict[int, dict[str, float]]:
     try:
         reader = PdfReader(str(pdf_path))
@@ -859,6 +1133,21 @@ def _image_metadata_observed(item: dict[str, Any]) -> dict[str, Any]:
         "color_space_name": item.get("color_space_name"),
         "color_space_family": item.get("color_space_family"),
     }
+
+
+def _annotation_observed(item: dict[str, Any]) -> dict[str, Any]:
+    observed = {
+        "subtype": item.get("subtype"),
+        "rectangle": item.get("rectangle"),
+        "flags": item.get("flags"),
+        "printed": item.get("printed"),
+        "hidden": item.get("hidden"),
+        "no_view": item.get("no_view"),
+    }
+    action_subtype = item.get("action_subtype")
+    if action_subtype is not None:
+        observed["action_subtype"] = action_subtype
+    return observed
 
 
 def _string_list(value: Any) -> list[str]:

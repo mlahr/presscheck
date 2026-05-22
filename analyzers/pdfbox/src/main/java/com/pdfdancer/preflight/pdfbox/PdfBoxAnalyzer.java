@@ -7,11 +7,16 @@ import org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine;
 import org.apache.pdfbox.contentstream.operator.Operator;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
+import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
+import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.common.PDDestinationOrAction;
+import org.apache.pdfbox.pdmodel.common.filespecification.PDComplexFileSpecification;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.blend.BlendMode;
@@ -32,6 +37,13 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdmodel.graphics.state.PDGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
+import org.apache.pdfbox.pdmodel.interactive.action.PDAction;
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionFactory;
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionJavaScript;
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink;
+import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.util.Matrix;
 import org.apache.pdfbox.util.Vector;
 
@@ -76,10 +88,12 @@ public final class PdfBoxAnalyzer {
         try (PDDocument document = Loader.loadPDF(pdfFile)) {
             List<Map<String, Object>> evidence = new ArrayList<>();
             collectOutputIntentEvidence(document, evidence);
+            collectDocumentInteractiveEvidence(document, evidence);
             int pageNumber = 0;
             for (PDPage page : document.getPages()) {
                 pageNumber++;
                 collectPageFontEvidence(page, pageNumber, evidence);
+                collectPageAnnotationEvidence(page, pageNumber, evidence);
                 collectPageContentEvidence(page, pageNumber, evidence);
             }
 
@@ -140,6 +154,139 @@ public final class PdfBoxAnalyzer {
         item.put("count", outputIntents.size());
         item.put("output_intents", outputIntentItems);
         evidence.add(item);
+    }
+
+    private static void collectDocumentInteractiveEvidence(PDDocument document, List<Map<String, Object>> evidence) throws IOException {
+        PDDocumentCatalog catalog = document.getDocumentCatalog();
+        collectOpenActionEvidence(catalog, evidence);
+        collectNamedJavaScriptEvidence(catalog, evidence);
+        collectEmbeddedFileEvidence(catalog, evidence);
+        collectFormEvidence(catalog, evidence);
+    }
+
+    private static void collectOpenActionEvidence(PDDocumentCatalog catalog, List<Map<String, Object>> evidence) throws IOException {
+        PDDestinationOrAction openAction = catalog.getOpenAction();
+        if (openAction instanceof PDAction action) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("check_id", "interactive.document_actions");
+            item.put("category", "interactive");
+            item.put("scope", "document");
+            item.put("location", "OpenAction");
+            addActionFields(item, action);
+            evidence.add(item);
+        }
+    }
+
+    private static void collectNamedJavaScriptEvidence(PDDocumentCatalog catalog, List<Map<String, Object>> evidence) throws IOException {
+        PDDocumentNameDictionary names = catalog.getNames();
+        if (names == null || names.getJavaScript() == null || names.getJavaScript().getNames() == null) {
+            return;
+        }
+
+        Map<String, PDActionJavaScript> scripts = names.getJavaScript().getNames();
+        if (scripts.isEmpty()) {
+            return;
+        }
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("check_id", "interactive.document_actions");
+        item.put("category", "interactive");
+        item.put("scope", "document");
+        item.put("location", "Names.JavaScript");
+        item.put("action_subtype", "JavaScript");
+        item.put("has_javascript", true);
+        item.put("count", scripts.size());
+        item.put("names", new ArrayList<>(scripts.keySet()));
+        evidence.add(item);
+    }
+
+    private static void collectEmbeddedFileEvidence(PDDocumentCatalog catalog, List<Map<String, Object>> evidence) throws IOException {
+        PDDocumentNameDictionary names = catalog.getNames();
+        if (names == null || names.getEmbeddedFiles() == null || names.getEmbeddedFiles().getNames() == null) {
+            return;
+        }
+
+        Map<String, PDComplexFileSpecification> embeddedFiles = names.getEmbeddedFiles().getNames();
+        if (embeddedFiles.isEmpty()) {
+            return;
+        }
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("check_id", "interactive.embedded_files");
+        item.put("category", "interactive");
+        item.put("scope", "document");
+        item.put("count", embeddedFiles.size());
+        item.put("names", new ArrayList<>(embeddedFiles.keySet()));
+        evidence.add(item);
+    }
+
+    private static void collectFormEvidence(PDDocumentCatalog catalog, List<Map<String, Object>> evidence) {
+        PDAcroForm acroForm = catalog.getAcroForm();
+        if (acroForm == null) {
+            return;
+        }
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("check_id", "interactive.forms");
+        item.put("category", "interactive");
+        item.put("scope", "document");
+        item.put("field_count", acroForm.getFields().size());
+        item.put("has_xfa", acroForm.hasXFA());
+        item.put("signatures_exist", acroForm.isSignaturesExist());
+        item.put("append_only", acroForm.isAppendOnly());
+        evidence.add(item);
+    }
+
+    private static void collectPageAnnotationEvidence(PDPage page, int pageNumber, List<Map<String, Object>> evidence) throws IOException {
+        PDRectangle cropBox = page.getCropBox();
+        for (PDAnnotation annotation : page.getAnnotations()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("check_id", "interactive.annotations");
+            item.put("category", "interactive");
+            item.put("page", pageNumber);
+            item.put("subtype", annotation.getSubtype());
+            item.put("flags", annotation.getAnnotationFlags());
+            item.put("printed", annotation.isPrinted());
+            item.put("hidden", annotation.isHidden());
+            item.put("no_view", annotation.isNoView());
+            item.put("rectangle", rectangle(annotation.getRectangle()));
+            item.put("outside_crop_box", isOutside(annotation.getRectangle(), cropBox));
+
+            if (annotation instanceof PDAnnotationLink link) {
+                PDAction action = link.getAction();
+                if (action != null) {
+                    addActionFields(item, action);
+                }
+            } else if (annotation.getCOSObject().getDictionaryObject(COSName.A) instanceof COSDictionary actionDictionary) {
+                addActionFields(item, PDActionFactory.createAction(actionDictionary));
+            }
+
+            evidence.add(item);
+        }
+    }
+
+    private static void addActionFields(Map<String, Object> item, PDAction action) {
+        item.put("action_subtype", action.getSubType());
+        item.put("has_javascript", action instanceof PDActionJavaScript);
+        if (action instanceof PDActionURI uriAction) {
+            item.put("uri", uriAction.getURI());
+        }
+    }
+
+    private static Map<String, Double> rectangle(PDRectangle rectangle) {
+        Map<String, Double> bounds = new LinkedHashMap<>();
+        bounds.put("left", (double) rectangle.getLowerLeftX());
+        bounds.put("bottom", (double) rectangle.getLowerLeftY());
+        bounds.put("right", (double) rectangle.getUpperRightX());
+        bounds.put("top", (double) rectangle.getUpperRightY());
+        return bounds;
+    }
+
+    private static boolean isOutside(PDRectangle rectangle, PDRectangle box) {
+        return rectangle.getLowerLeftX() < box.getLowerLeftX()
+                || rectangle.getLowerLeftY() < box.getLowerLeftY()
+                || rectangle.getUpperRightX() > box.getUpperRightX()
+                || rectangle.getUpperRightY() > box.getUpperRightY();
     }
 
     private static void collectPageContentEvidence(PDPage page, int pageNumber, List<Map<String, Object>> evidence) throws IOException {

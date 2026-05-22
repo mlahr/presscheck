@@ -1477,3 +1477,305 @@ def test_pdfbox_adapter_rejects_invalid_transparency_policy_severity(tmp_path: P
         assert "invalid severity" in str(exc)
     else:
         raise AssertionError("expected invalid severity to raise ValueError")
+
+
+def test_pdfbox_adapter_maps_annotation_policy(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "interactive.annotations",
+      "category": "interactive",
+      "page": 1,
+      "subtype": "FileAttachment",
+      "flags": 4,
+      "printed": true,
+      "hidden": false,
+      "no_view": false,
+      "rectangle": {"left": 10.0, "bottom": 10.0, "right": 20.0, "top": 20.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "interactive.annotation_policy": CheckConfig(
+                check_id="interactive.annotation_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"severity_by_subtype": {"Link": None, "FileAttachment": "error", "Other": "warning"}},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "interactive.annotation_policy"
+    assert findings[0].category == "interactive"
+    assert findings[0].severity == Severity.error
+    assert findings[0].page == 1
+    assert findings[0].observed["subtype"] == "FileAttachment"
+    assert findings[0].threshold == {"severity_by_subtype": {"FileAttachment": "error"}}
+
+
+def test_pdfbox_adapter_allows_ebook_http_link(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "interactive.annotations",
+      "category": "interactive",
+      "page": 1,
+      "subtype": "Link",
+      "flags": 4,
+      "printed": true,
+      "hidden": false,
+      "no_view": false,
+      "rectangle": {"left": 10.0, "bottom": 10.0, "right": 20.0, "top": 20.0},
+      "action_subtype": "URI",
+      "uri": "https://example.com"
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "interactive.annotation_policy": CheckConfig(
+                check_id="interactive.annotation_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"severity_by_subtype": {"Link": None, "Other": "warning"}},
+            ),
+            "interactive.link_uri_policy": CheckConfig(
+                check_id="interactive.link_uri_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"allowed_schemes": ["http", "https", "mailto"], "disallow_all": False},
+            ),
+        },
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_reports_disallowed_link_uri(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "interactive.annotations",
+      "category": "interactive",
+      "page": 1,
+      "subtype": "Link",
+      "flags": 4,
+      "printed": true,
+      "hidden": false,
+      "no_view": false,
+      "rectangle": {"left": 10.0, "bottom": 10.0, "right": 20.0, "top": 20.0},
+      "action_subtype": "URI",
+      "uri": "ftp://example.com/file"
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "interactive.link_uri_policy": CheckConfig(
+                check_id="interactive.link_uri_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={"allowed_schemes": ["http", "https", "mailto"], "disallow_all": False},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "interactive.link_uri_policy"
+    assert findings[0].observed["uri_scheme"] == "ftp"
+    assert findings[0].threshold == {"allowed_schemes": ["http", "https", "mailto"], "disallow_all": False}
+
+
+def test_pdfbox_adapter_reports_annotation_outside_configured_box(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    page[NameObject("/CropBox")] = RectangleObject((0, 0, 100, 100))
+    with pdf.open("wb") as file:
+        writer.write(file)
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "interactive.annotations",
+      "category": "interactive",
+      "page": 1,
+      "subtype": "Link",
+      "flags": 4,
+      "printed": true,
+      "hidden": false,
+      "no_view": false,
+      "rectangle": {"left": 90.0, "bottom": 10.0, "right": 110.0, "top": 20.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "interactive.annotation_bounds_within_box": CheckConfig(
+                check_id="interactive.annotation_bounds_within_box",
+                enabled=True,
+                severity=Severity.warning,
+                params={"box": "CropBox", "tolerance_pt": 0.5},
+            )
+        },
+    )
+
+    findings = pdfbox.analyze(pdf, target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "interactive.annotation_bounds_within_box"
+    assert findings[0].observed["outside"] == {"right_pt": 10.0}
+
+
+def test_pdfbox_adapter_maps_javascript_embedded_files_and_forms(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "interactive.document_actions",
+      "category": "interactive",
+      "scope": "document",
+      "location": "OpenAction",
+      "action_subtype": "JavaScript",
+      "has_javascript": true
+    },
+    {
+      "check_id": "interactive.embedded_files",
+      "category": "interactive",
+      "scope": "document",
+      "count": 1,
+      "names": ["notes.txt"]
+    },
+    {
+      "check_id": "interactive.forms",
+      "category": "interactive",
+      "scope": "document",
+      "field_count": 2,
+      "has_xfa": false,
+      "signatures_exist": false,
+      "append_only": false
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "interactive.javascript_policy": CheckConfig(
+                check_id="interactive.javascript_policy",
+                enabled=True,
+                severity=Severity.error,
+                params={},
+            ),
+            "interactive.embedded_files_policy": CheckConfig(
+                check_id="interactive.embedded_files_policy",
+                enabled=True,
+                severity=Severity.error,
+                params={},
+            ),
+            "interactive.form_policy": CheckConfig(
+                check_id="interactive.form_policy",
+                enabled=True,
+                severity=Severity.warning,
+                params={},
+            ),
+        },
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert [finding.check_id for finding in findings] == [
+        "interactive.javascript_policy",
+        "interactive.embedded_files_policy",
+        "interactive.form_policy",
+    ]
+    assert findings[0].severity == Severity.error
+    assert findings[1].observed == {"count": 1, "names": ["notes.txt"]}
+    assert findings[2].observed == {
+        "field_count": 2,
+        "has_xfa": False,
+        "signatures_exist": False,
+        "append_only": False,
+    }

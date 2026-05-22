@@ -161,6 +161,12 @@ jq '.findings[]' report.json
 - `color.registration_color_misuse`: painted use of registration color `/All`
 - `color.spot_color_policy`: target-driven allow/ignore policy for `Separation` and `DeviceN` colorants
 - `graphics.overprint_policy`: painted content that uses stroking or non-stroking overprint
+- `interactive.annotation_policy`: target-driven policy for annotation subtypes
+- `interactive.link_uri_policy`: target-driven policy for link URI schemes
+- `interactive.annotation_bounds_within_box`: annotation rectangles within a configured page box
+- `interactive.javascript_policy`: document or annotation JavaScript actions
+- `interactive.embedded_files_policy`: document embedded files
+- `interactive.form_policy`: AcroForm/XFA/signature form structures
 - `transparency.live_transparency_policy`: target-driven policy for applied live transparency features
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
@@ -252,6 +258,42 @@ checks:
     enabled: true
     severity: warning
     timeout_seconds: 60
+  interactive.annotation_policy:
+    enabled: true
+    severity: warning
+    severity_by_subtype:
+      Link: warning
+      Widget: error
+      FileAttachment: error
+      Movie: error
+      Sound: error
+      Screen: error
+      Other: warning
+    timeout_seconds: 60
+  interactive.link_uri_policy:
+    enabled: true
+    severity: warning
+    allowed_schemes: []
+    disallow_all: true
+    timeout_seconds: 60
+  interactive.annotation_bounds_within_box:
+    enabled: true
+    severity: warning
+    box: CropBox
+    tolerance_pt: 0.5
+    timeout_seconds: 60
+  interactive.javascript_policy:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  interactive.embedded_files_policy:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  interactive.form_policy:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
   transparency.live_transparency_policy:
     enabled: true
     severity: warning
@@ -305,5 +347,6 @@ Severity levels:
 - Transparency policy checks cover applied graphics states and directly used transparency-group XObjects in page and Form XObject content.
 - Structural bleed checks compare BleedBox margins against TrimBox; they do not verify that artwork visually fills the bleed area.
 - Object bounds checks currently cover placed images and Form XObjects, not text, vector paths, annotations, patterns, or raster-derived artwork.
+- Interactive checks do not validate external URLs or internal destinations, and JavaScript source is not included in reports.
 - `summary.color.image_color_space_findings_by_family` counts color policy findings, not all allowed image color spaces.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.

@@ -5,7 +5,10 @@ import org.apache.pdfbox.pdmodel.PDFormContentStream;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
+import org.apache.pdfbox.pdmodel.PDEmbeddedFilesNameTreeNode;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.common.filespecification.PDComplexFileSpecification;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.cos.COSArray;
@@ -22,6 +25,11 @@ import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
 import org.apache.pdfbox.pdmodel.graphics.image.JPEGFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionJavaScript;
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink;
+import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
+import org.apache.pdfbox.pdmodel.interactive.form.PDTextField;
 import org.apache.pdfbox.util.Matrix;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -518,6 +526,119 @@ class PdfBoxAnalyzerTest {
         assertEquals("non_stroking", evidence.get("paint_role"));
         assertEquals(1, evidence.get("overprint_mode"));
         assertEquals(1, evidence.get("occurrences"));
+    }
+
+    @Test
+    void reportsLinkAnnotationWithUriAndBounds() throws Exception {
+        File pdf = tempDir.resolve("link-annotation.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            page.setCropBox(new PDRectangle(0, 0, 200, 200));
+            document.addPage(page);
+
+            PDAnnotationLink link = new PDAnnotationLink();
+            link.setRectangle(new PDRectangle(10, 10, 50, 20));
+            link.setPrinted(true);
+            PDActionURI action = new PDActionURI();
+            action.setURI("https://example.com");
+            link.setAction(action);
+            page.setAnnotations(List.of(link));
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "interactive.annotations");
+        assertEquals("interactive", evidence.get("category"));
+        assertEquals(1, evidence.get("page"));
+        assertEquals("Link", evidence.get("subtype"));
+        assertEquals(true, evidence.get("printed"));
+        assertEquals(false, evidence.get("outside_crop_box"));
+        assertEquals("URI", evidence.get("action_subtype"));
+        assertEquals("https://example.com", evidence.get("uri"));
+    }
+
+    @Test
+    void reportsAnnotationOutsideCropBox() throws Exception {
+        File pdf = tempDir.resolve("outside-annotation.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            PDPage page = new PDPage();
+            page.setCropBox(new PDRectangle(0, 0, 200, 200));
+            document.addPage(page);
+
+            PDAnnotationLink link = new PDAnnotationLink();
+            link.setRectangle(new PDRectangle(190, 10, 40, 20));
+            page.setAnnotations(List.of(link));
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "interactive.annotations");
+        assertEquals(true, evidence.get("outside_crop_box"));
+    }
+
+    @Test
+    void reportsJavaScriptOpenAction() throws Exception {
+        File pdf = tempDir.resolve("javascript-open-action.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            document.getDocumentCatalog().setOpenAction(new PDActionJavaScript("app.alert('x')"));
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "interactive.document_actions");
+        assertEquals("document", evidence.get("scope"));
+        assertEquals("OpenAction", evidence.get("location"));
+        assertEquals("JavaScript", evidence.get("action_subtype"));
+        assertEquals(true, evidence.get("has_javascript"));
+        assertFalse(evidence.containsKey("script"));
+    }
+
+    @Test
+    void reportsEmbeddedFiles() throws Exception {
+        File pdf = tempDir.resolve("embedded-file.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            PDDocumentNameDictionary names = new PDDocumentNameDictionary(document.getDocumentCatalog());
+            PDEmbeddedFilesNameTreeNode embeddedFiles = new PDEmbeddedFilesNameTreeNode();
+            PDComplexFileSpecification fileSpecification = new PDComplexFileSpecification();
+            fileSpecification.setFile("notes.txt");
+            embeddedFiles.setNames(Map.of("notes.txt", fileSpecification));
+            names.setEmbeddedFiles(embeddedFiles);
+            document.getDocumentCatalog().setNames(names);
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "interactive.embedded_files");
+        assertEquals("document", evidence.get("scope"));
+        assertEquals(1, evidence.get("count"));
+        assertEquals(List.of("notes.txt"), evidence.get("names"));
+    }
+
+    @Test
+    void reportsAcroForm() throws Exception {
+        File pdf = tempDir.resolve("form.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            PDAcroForm form = new PDAcroForm(document);
+            PDTextField field = new PDTextField(form);
+            field.setPartialName("title");
+            form.setFields(List.of(field));
+            document.getDocumentCatalog().setAcroForm(form);
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "interactive.forms");
+        assertEquals("document", evidence.get("scope"));
+        assertEquals(1, evidence.get("field_count"));
+        assertEquals(false, evidence.get("has_xfa"));
     }
 
     @Test

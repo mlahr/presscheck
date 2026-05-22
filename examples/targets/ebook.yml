@@ -71,6 +71,45 @@ checks:
     enabled: false
     severity: info
     timeout_seconds: 60
+  interactive.annotation_policy:
+    enabled: true
+    severity: warning
+    severity_by_subtype:
+      Link:
+      Widget: warning
+      FileAttachment: error
+      Movie: error
+      Sound: error
+      Screen: error
+      Other: warning
+    timeout_seconds: 60
+  interactive.link_uri_policy:
+    enabled: true
+    severity: warning
+    allowed_schemes:
+      - http
+      - https
+      - mailto
+    disallow_all: false
+    timeout_seconds: 60
+  interactive.annotation_bounds_within_box:
+    enabled: true
+    severity: warning
+    box: CropBox
+    tolerance_pt: 0.5
+    timeout_seconds: 60
+  interactive.javascript_policy:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  interactive.embedded_files_policy:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  interactive.form_policy:
+    enabled: true
+    severity: warning
+    timeout_seconds: 60
   transparency.live_transparency_policy:
     enabled: false
     severity: info
