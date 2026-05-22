@@ -17,7 +17,13 @@ def _target() -> TargetConfig:
                 enabled=True,
                 severity=Severity.warning,
                 params={},
-            )
+            ),
+            "images.low_effective_resolution": CheckConfig(
+                check_id="images.low_effective_resolution",
+                enabled=True,
+                severity=Severity.error,
+                params={"min_dpi": 300},
+            ),
         },
     )
 
@@ -127,3 +133,69 @@ def test_pdfbox_adapter_fails_closed_on_invalid_json(tmp_path: Path, monkeypatch
     findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
 
     assert findings[0].check_id == "document_integrity.pdfbox_analyzer_failed"
+
+
+def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "images.effective_resolution",
+      "category": "images",
+      "page": 1,
+      "resource_name": "Im1",
+      "pixel_width": 300,
+      "pixel_height": 300,
+      "drawn_width_pt": 216.0,
+      "drawn_height_pt": 216.0,
+      "x_dpi": 100.0,
+      "y_dpi": 100.0,
+      "min_dpi": 100.0
+    },
+    {
+      "check_id": "images.effective_resolution",
+      "category": "images",
+      "page": 1,
+      "resource_name": "Im2",
+      "pixel_width": 300,
+      "pixel_height": 300,
+      "drawn_width_pt": 72.0,
+      "drawn_height_pt": 72.0,
+      "x_dpi": 300.0,
+      "y_dpi": 300.0,
+      "min_dpi": 300.0
+    }
+  ]
+}
+""",
+        ),
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
+
+    image_findings = [finding for finding in findings if finding.check_id == "images.low_effective_resolution"]
+    assert len(image_findings) == 1
+    assert image_findings[0].severity == Severity.error
+    assert image_findings[0].page == 1
+    assert image_findings[0].object_ref == "Im1"
+    assert image_findings[0].observed == {
+        "pixel_width": 300,
+        "pixel_height": 300,
+        "drawn_width_pt": 216.0,
+        "drawn_height_pt": 216.0,
+        "x_dpi": 100.0,
+        "y_dpi": 100.0,
+        "min_dpi": 100.0,
+    }
+    assert image_findings[0].threshold == {"min_dpi": 300.0}

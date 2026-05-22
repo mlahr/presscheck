@@ -10,15 +10,24 @@ from typing import Any
 from pdfdancer_preflight.models import Finding, Severity, TargetConfig
 
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
+LOW_EFFECTIVE_RESOLUTION_CHECK = "images.low_effective_resolution"
+EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
 logger = logging.getLogger(__name__)
 
 
 def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
-    check = target.check(NON_EMBEDDED_FONTS_CHECK)
-    if check is None:
-        logger.debug("check disabled: %s", NON_EMBEDDED_FONTS_CHECK)
+    enabled_checks = [
+        check
+        for check in (
+            target.check(NON_EMBEDDED_FONTS_CHECK),
+            target.check(LOW_EFFECTIVE_RESOLUTION_CHECK),
+        )
+        if check is not None
+    ]
+    if not enabled_checks:
+        logger.debug("all PDFBox-backed checks disabled")
         return []
 
     jar_path = _jar_path()
@@ -26,7 +35,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         logger.error("PDFBox analyzer jar not found: %s", jar_path)
         return [_failure("PDFBox analyzer jar was not found.", target, {"jar_path": str(jar_path)})]
 
-    timeout = float(check.params.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
+    timeout = max(float(check.params.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)) for check in enabled_checks)
     logger.info("running PDFBox analyzer: jar=%s timeout_seconds=%s", jar_path, timeout)
     try:
         completed = subprocess.run(
@@ -62,12 +71,23 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         logger.error("PDFBox analyzer evidence was not a list")
         return [_failure("PDFBox analyzer evidence was not a list.", target, {})]
 
+    findings: list[Finding] = []
+
+    font_check = target.check(NON_EMBEDDED_FONTS_CHECK)
     font_evidence = [item for item in evidence if _is_non_embedded_font_evidence(item)]
-    findings = _group_non_embedded_font_findings(font_evidence, check.severity)
+    if font_check is not None:
+        findings.extend(_group_non_embedded_font_findings(font_evidence, font_check.severity))
+
+    image_check = target.check(LOW_EFFECTIVE_RESOLUTION_CHECK)
+    image_evidence = [item for item in evidence if _is_effective_resolution_evidence(item)]
+    if image_check is not None:
+        findings.extend(_low_resolution_image_findings(image_evidence, image_check.severity, image_check.params))
+
     logger.info(
-        "PDFBox analyzer completed: evidence=%s font_evidence=%s findings=%s",
+        "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
+        len(image_evidence),
         len(findings),
     )
     return findings
@@ -82,6 +102,10 @@ def _jar_path() -> Path:
 
 def _is_non_embedded_font_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == NON_EMBEDDED_FONTS_CHECK and item.get("embedded") is False
+
+
+def _is_effective_resolution_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == EFFECTIVE_RESOLUTION_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -130,6 +154,58 @@ def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: 
 
     findings.sort(key=lambda finding: (finding.observed["font_name"], finding.observed["subtype"]))
     return findings
+
+
+def _low_resolution_image_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    min_dpi_threshold = _required_number(params, "min_dpi", LOW_EFFECTIVE_RESOLUTION_CHECK)
+    findings = []
+    for item in evidence:
+        min_dpi = _number_or_none(item.get("min_dpi"))
+        if min_dpi is None or min_dpi >= min_dpi_threshold:
+            continue
+
+        page = item.get("page")
+        resource_name = item.get("resource_name")
+        findings.append(
+            Finding(
+                check_id=LOW_EFFECTIVE_RESOLUTION_CHECK,
+                category="images",
+                severity=severity,
+                message=f"Image effective resolution is below {min_dpi_threshold:g} DPI.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page if isinstance(page, int) else None,
+                object_ref=str(resource_name) if resource_name is not None else None,
+                observed={
+                    "pixel_width": item.get("pixel_width"),
+                    "pixel_height": item.get("pixel_height"),
+                    "drawn_width_pt": item.get("drawn_width_pt"),
+                    "drawn_height_pt": item.get("drawn_height_pt"),
+                    "x_dpi": item.get("x_dpi"),
+                    "y_dpi": item.get("y_dpi"),
+                    "min_dpi": min_dpi,
+                },
+                threshold={"min_dpi": min_dpi_threshold},
+            )
+        )
+
+    findings.sort(key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["min_dpi"]))
+    return findings
+
+
+def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:
+    value = params.get(name)
+    if not isinstance(value, int | float):
+        raise ValueError(f"check '{check_id}' requires numeric parameter '{name}'")
+    return float(value)
+
+
+def _number_or_none(value: Any) -> float | None:
+    if isinstance(value, int | float):
+        return float(value)
+    return None
 
 
 def _failure(message: str, target: TargetConfig, observed: dict[str, Any]) -> Finding:

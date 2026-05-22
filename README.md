@@ -108,10 +108,10 @@ Reports include a built-in summary:
     },
     "by_check": [
       {
-        "check_id": "fonts.non_embedded",
-        "category": "fonts",
+        "check_id": "images.low_effective_resolution",
+        "category": "images",
         "severity": "error",
-        "count": 2,
+        "count": 1,
         "pages": [1, 2]
       }
     ]
@@ -145,12 +145,18 @@ jq '.findings[]' report.json
 
 - `document_integrity.ghostscript_processable`
 - `fonts.non_embedded`: grouped by font name and subtype
+- `images.low_effective_resolution`: direct image placements only
 - `geometry.page_boxes_present`
 - `geometry.trim_size_matches`
 
 ## Target Config
 
 Every run requires a target YAML file. The current format is intentionally small and may change.
+
+Example targets:
+
+- `examples/targets/print-basic.yml`: print-oriented; requires trim and bleed boxes.
+- `examples/targets/ebook.yml`: digital/ebook-oriented; only requires `MediaBox`, disables trim-size checks, and uses lower image DPI severity/thresholds.
 
 Example:
 
@@ -164,6 +170,11 @@ checks:
   fonts.non_embedded:
     enabled: true
     severity: error
+    timeout_seconds: 60
+  images.low_effective_resolution:
+    enabled: true
+    severity: error
+    min_dpi: 300
     timeout_seconds: 60
   geometry.page_boxes_present:
     enabled: true
@@ -192,4 +203,5 @@ Severity levels:
 - Logs are written to stderr.
 - The JSON format is not stable yet.
 - Raw Ghostscript logs are not included in output.
+- Image effective resolution checks currently cover direct image placements only, not images nested inside Form XObjects.
 - `uv.lock` should be committed for reproducible CLI and CI behavior.
