@@ -7,4 +7,5 @@ __pycache__/
 *.py[cod]
 /.idea
 report.json
+report.*.json
 /fixtures
