@@ -109,6 +109,14 @@ class PdfBoxAnalyzerTest {
         assertDoubleEquals(12.0, evidence.get("effective_size_pt"));
         assertDoubleEquals(12.0, evidence.get("horizontal_size_pt"));
         assertEquals(2, evidence.get("occurrences"));
+
+        Map<String, Object> boundsEvidence = firstEvidenceFor(result, "geometry.text_bounds");
+        assertEquals("geometry", boundsEvidence.get("category"));
+        assertEquals(1, boundsEvidence.get("page"));
+        assertEquals("text", boundsEvidence.get("object_type"));
+        assertEquals("Helvetica", boundsEvidence.get("font_name"));
+        assertDoubleEquals(12.0, boundsEvidence.get("effective_size_pt"));
+        assertBounds(boundsEvidence, 72.0, 717.3, 83.328, 731.172);
     }
 
     @Test
@@ -167,6 +175,11 @@ class PdfBoxAnalyzerTest {
         assertEquals("Form1", evidence.get("resource_path"));
         assertDoubleEquals(8.0, evidence.get("effective_size_pt"));
         assertEquals(2, evidence.get("occurrences"));
+
+        Map<String, Object> boundsEvidence = firstEvidenceFor(result, "geometry.text_bounds", "Form1");
+        assertEquals("text", boundsEvidence.get("object_type"));
+        assertEquals("Form1", boundsEvidence.get("resource_path"));
+        assertDoubleEquals(8.0, boundsEvidence.get("effective_size_pt"));
     }
 
     @Test

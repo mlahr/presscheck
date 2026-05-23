@@ -187,3 +187,18 @@ checks:
     severity: warning
     box: BleedBox
     tolerance_pt: 0.5
+  geometry.safe_area_margin:
+    enabled: true
+    severity: warning
+    box: TrimBox
+    margins_pt:
+      left: 18
+      right: 18
+      top: 18
+      bottom: 18
+    include_object_types:
+      - text
+      - image
+      - form
+    ignore_objects_crossing_trim: true
+    tolerance_pt: 0.5

@@ -457,6 +457,7 @@ public final class PdfBoxAnalyzer {
         private final List<Map<String, Object>> evidence;
         private final List<String> resourcePath = new ArrayList<>();
         private final Map<String, TextSizeGroup> textSizeGroups = new LinkedHashMap<>();
+        private final Map<String, TextBoundsGroup> textBoundsGroups = new LinkedHashMap<>();
         private final Map<String, SpecialColorGroup> specialColorGroups = new LinkedHashMap<>();
         private final Map<String, OverprintGroup> overprintGroups = new LinkedHashMap<>();
         private boolean hasContentStream;
@@ -476,6 +477,7 @@ public final class PdfBoxAnalyzer {
         @Override
         public void processPage(PDPage page) throws IOException {
             super.processPage(page);
+            flushTextBoundsEvidence();
             flushTextSizeEvidence();
             flushSpecialColorEvidence();
             flushOverprintEvidence();
@@ -527,6 +529,7 @@ public final class PdfBoxAnalyzer {
         protected void showGlyph(Matrix textRenderingMatrix, PDFont font, int code, Vector displacement) throws IOException {
             textGlyphCount++;
             collectTextSize(textRenderingMatrix, font);
+            collectTextBounds(textRenderingMatrix, font, code, displacement);
             RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
             if (renderingMode.isFill()) {
                 collectPaintState("text_fill", false);
@@ -555,6 +558,49 @@ public final class PdfBoxAnalyzer {
                 textSizeGroups.put(key, group);
             }
             group.occurrences++;
+        }
+
+        private void collectTextBounds(Matrix textRenderingMatrix, PDFont font, int code, Vector displacement) throws IOException {
+            RenderingMode renderingMode = getGraphicsState().getTextState().getRenderingMode();
+            if (!renderingMode.isFill() && !renderingMode.isStroke()) {
+                return;
+            }
+
+            float width = Math.max(displacement.getX(), font.getWidth(code) / 1000.0f);
+            float lower = font.getBoundingBox().getLowerLeftY() / 1000.0f;
+            float upper = font.getBoundingBox().getUpperRightY() / 1000.0f;
+            String fontName = font.getName();
+            String subtype = font.getSubType();
+            String path = currentResourcePath();
+            double effectiveSize = round2(Math.abs(textRenderingMatrix.getScalingFactorY()));
+            double horizontalSize = round2(Math.abs(textRenderingMatrix.getScalingFactorX()));
+            String key = pageNumber + "|" + path + "|" + fontName + "|" + subtype + "|" + effectiveSize + "|" + horizontalSize;
+            TextBoundsGroup group = textBoundsGroups.get(key);
+            if (group == null) {
+                group = new TextBoundsGroup(fontName, subtype, path, effectiveSize, horizontalSize);
+                textBoundsGroups.put(key, group);
+            }
+            group.include(transformedBounds(textRenderingMatrix, 0, lower, width, upper));
+        }
+
+        private void flushTextBoundsEvidence() {
+            for (TextBoundsGroup group : textBoundsGroups.values()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("check_id", "geometry.text_bounds");
+                item.put("category", "geometry");
+                item.put("page", pageNumber);
+                if (!group.resourcePath.isEmpty()) {
+                    item.put("resource_path", group.resourcePath);
+                }
+                item.put("object_type", "text");
+                item.put("font_name", group.fontName);
+                item.put("subtype", group.subtype);
+                item.put("effective_size_pt", group.effectiveSizePt);
+                item.put("horizontal_size_pt", group.horizontalSizePt);
+                item.put("occurrences", group.occurrences);
+                item.put("bounds_pt", group.bounds());
+                evidence.add(item);
+            }
         }
 
         private void flushTextSizeEvidence() {
@@ -993,6 +1039,50 @@ public final class PdfBoxAnalyzer {
                 this.effectiveSizePt = effectiveSizePt;
                 this.horizontalSizePt = horizontalSizePt;
                 this.occurrences = 0;
+            }
+        }
+
+        private static final class TextBoundsGroup {
+            private final String fontName;
+            private final String subtype;
+            private final String resourcePath;
+            private final double effectiveSizePt;
+            private final double horizontalSizePt;
+            private double left = Double.POSITIVE_INFINITY;
+            private double bottom = Double.POSITIVE_INFINITY;
+            private double right = Double.NEGATIVE_INFINITY;
+            private double top = Double.NEGATIVE_INFINITY;
+            private int occurrences;
+
+            private TextBoundsGroup(
+                    String fontName,
+                    String subtype,
+                    String resourcePath,
+                    double effectiveSizePt,
+                    double horizontalSizePt
+            ) {
+                this.fontName = fontName;
+                this.subtype = subtype;
+                this.resourcePath = resourcePath;
+                this.effectiveSizePt = effectiveSizePt;
+                this.horizontalSizePt = horizontalSizePt;
+            }
+
+            private void include(Map<String, Double> bounds) {
+                left = Math.min(left, bounds.get("left"));
+                bottom = Math.min(bottom, bounds.get("bottom"));
+                right = Math.max(right, bounds.get("right"));
+                top = Math.max(top, bounds.get("top"));
+                occurrences++;
+            }
+
+            private Map<String, Double> bounds() {
+                Map<String, Double> bounds = new LinkedHashMap<>();
+                bounds.put("left", left);
+                bounds.put("bottom", bottom);
+                bounds.put("right", right);
+                bounds.put("top", top);
+                return bounds;
             }
         }
 

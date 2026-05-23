@@ -60,7 +60,13 @@ Current checks validate page boxes and object bounds, but not whether bleed is a
 
 ### Text Safety
 
-- Text too close to trim or spine
+Implemented:
+
+- Text/image/Form XObject safe-area margin against page boxes
+
+Still missing:
+
+- Spine-aware text margins
 - Invisible text
 - Text rendered as image
 - Outlined text detection

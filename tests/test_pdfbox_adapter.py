@@ -121,6 +121,14 @@ def _write_pdf_with_bleed_box(path: Path, bleed_box=(0, 0, 100, 100)) -> None:
         writer.write(file)
 
 
+def _write_pdf_with_trim_box(path: Path, trim_box=(0, 0, 100, 100)) -> None:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    page[NameObject("/TrimBox")] = RectangleObject(trim_box)
+    with path.open("wb") as file:
+        writer.write(file)
+
+
 def test_pdfbox_adapter_groups_non_embedded_font_evidence(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
@@ -1431,6 +1439,252 @@ def test_pdfbox_adapter_skips_object_bounds_when_configured_box_is_missing(tmp_p
     assert pdfbox.analyze(pdf, target) == []
 
 
+def test_pdfbox_adapter_reports_text_inside_safe_area_margin(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.text_bounds",
+      "category": "geometry",
+      "page": 1,
+      "object_type": "text",
+      "font_name": "Helvetica",
+      "subtype": "Type1",
+      "effective_size_pt": 12.0,
+      "bounds_pt": {"left": 10.0, "bottom": 80.0, "right": 40.0, "top": 95.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = _safe_area_target()
+
+    findings = pdfbox.analyze(pdf, target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "geometry.safe_area_margin"
+    assert findings[0].category == "geometry"
+    assert findings[0].severity == Severity.warning
+    assert findings[0].page == 1
+    assert findings[0].observed == {
+        "object_type": "text",
+        "bounds_pt": {"left": 10.0, "bottom": 80.0, "right": 40.0, "top": 95.0},
+        "box": "TrimBox",
+        "box_bounds_pt": {"left": 0.0, "bottom": 0.0, "right": 100.0, "top": 100.0},
+        "violations": {"left_pt": 8.0, "top_pt": 13.0},
+        "font_name": "Helvetica",
+        "subtype": "Type1",
+        "effective_size_pt": 12.0,
+    }
+    assert findings[0].threshold == {
+        "box": "TrimBox",
+        "margins_pt": {"left": 18.0, "right": 18.0, "top": 18.0, "bottom": 18.0},
+        "include_object_types": ["form", "image", "text"],
+        "ignore_objects_crossing_trim": True,
+        "tolerance_pt": 0.5,
+    }
+
+
+def test_pdfbox_adapter_allows_text_outside_safe_area_margin(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.text_bounds",
+      "category": "geometry",
+      "page": 1,
+      "object_type": "text",
+      "bounds_pt": {"left": 20.0, "bottom": 20.0, "right": 80.0, "top": 80.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+
+    assert pdfbox.analyze(pdf, _safe_area_target()) == []
+
+
+def test_pdfbox_adapter_reports_image_inside_safe_area_margin(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.object_bounds",
+      "category": "geometry",
+      "page": 1,
+      "resource_name": "Im1",
+      "object_type": "image",
+      "bounds_pt": {"left": 5.0, "bottom": 20.0, "right": 50.0, "top": 70.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+
+    findings = pdfbox.analyze(pdf, _safe_area_target())
+
+    assert len(findings) == 1
+    assert findings[0].object_ref == "Im1"
+    assert findings[0].observed["violations"] == {"left_pt": 13.0}
+
+
+def test_pdfbox_adapter_ignores_image_crossing_trim_for_safe_area(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.object_bounds",
+      "category": "geometry",
+      "page": 1,
+      "resource_name": "Im1",
+      "object_type": "image",
+      "bounds_pt": {"left": -5.0, "bottom": 0.0, "right": 105.0, "top": 100.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+
+    assert pdfbox.analyze(pdf, _safe_area_target()) == []
+
+
+def test_pdfbox_adapter_reports_crossing_image_when_safe_area_ignore_is_disabled(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pdf = tmp_path / "input.pdf"
+    _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.object_bounds",
+      "category": "geometry",
+      "page": 1,
+      "resource_name": "Im1",
+      "object_type": "image",
+      "bounds_pt": {"left": -5.0, "bottom": 0.0, "right": 105.0, "top": 100.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+    target = _safe_area_target({"ignore_objects_crossing_trim": False})
+
+    findings = pdfbox.analyze(pdf, target)
+
+    assert len(findings) == 1
+    assert findings[0].observed["violations"] == {
+        "left_pt": 23.0,
+        "bottom_pt": 18.0,
+        "right_pt": 23.0,
+        "top_pt": 18.0,
+    }
+
+
+def test_pdfbox_adapter_skips_safe_area_when_configured_box_is_missing(tmp_path: Path, monkeypatch) -> None:
+    pdf = tmp_path / "input.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    with pdf.open("wb") as file:
+        writer.write(file)
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="""
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "geometry.text_bounds",
+      "category": "geometry",
+      "page": 1,
+      "object_type": "text",
+      "bounds_pt": {"left": 1.0, "bottom": 1.0, "right": 20.0, "top": 20.0}
+    }
+  ]
+}
+""",
+        ),
+    )
+
+    assert pdfbox.analyze(pdf, _safe_area_target()) == []
+
+
 def test_pdfbox_adapter_rejects_invalid_transparency_policy_severity(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
@@ -2202,6 +2456,29 @@ def _metadata_target(check_id: str, severity: Severity, params: dict) -> TargetC
                 enabled=True,
                 severity=severity,
                 params=params,
+            )
+        },
+    )
+
+
+def _safe_area_target(params: dict | None = None) -> TargetConfig:
+    merged_params = {
+        "box": "TrimBox",
+        "margins_pt": {"left": 18, "right": 18, "top": 18, "bottom": 18},
+        "include_object_types": ["text", "image", "form"],
+        "ignore_objects_crossing_trim": True,
+        "tolerance_pt": 0.5,
+    }
+    if params is not None:
+        merged_params.update(params)
+    return TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            "geometry.safe_area_margin": CheckConfig(
+                check_id="geometry.safe_area_margin",
+                enabled=True,
+                severity=Severity.warning,
+                params=merged_params,
             )
         },
     )

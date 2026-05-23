@@ -22,6 +22,7 @@ IMAGE_COLOR_SPACE_POLICY_CHECK = "color.image_color_space_policy"
 OUTPUT_INTENT_REQUIRED_CHECK = "color.output_intent_required"
 LIVE_TRANSPARENCY_POLICY_CHECK = "transparency.live_transparency_policy"
 OBJECT_BOUNDS_WITHIN_BOX_CHECK = "geometry.object_bounds_within_box"
+SAFE_AREA_MARGIN_CHECK = "geometry.safe_area_margin"
 REGISTRATION_COLOR_MISUSE_CHECK = "color.registration_color_misuse"
 SPOT_COLOR_POLICY_CHECK = "color.spot_color_policy"
 OVERPRINT_POLICY_CHECK = "graphics.overprint_policy"
@@ -41,6 +42,7 @@ TEXT_SIZE_EVIDENCE = "fonts.text_size"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
 TRANSPARENCY_FEATURES_EVIDENCE = "transparency.features"
 OBJECT_BOUNDS_EVIDENCE = "geometry.object_bounds"
+TEXT_BOUNDS_EVIDENCE = "geometry.text_bounds"
 SPECIAL_COLOR_USAGE_EVIDENCE = "color.special_color_usage"
 OVERPRINT_USAGE_EVIDENCE = "graphics.overprint_usage"
 ANNOTATIONS_EVIDENCE = "interactive.annotations"
@@ -76,6 +78,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(OUTPUT_INTENT_REQUIRED_CHECK),
             target.check(LIVE_TRANSPARENCY_POLICY_CHECK),
             target.check(OBJECT_BOUNDS_WITHIN_BOX_CHECK),
+            target.check(SAFE_AREA_MARGIN_CHECK),
             target.check(REGISTRATION_COLOR_MISUSE_CHECK),
             target.check(SPOT_COLOR_POLICY_CHECK),
             target.check(OVERPRINT_POLICY_CHECK),
@@ -195,6 +198,18 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             )
         )
 
+    text_bounds_evidence = [item for item in evidence if _is_text_bounds_evidence(item)]
+    safe_area_check = target.check(SAFE_AREA_MARGIN_CHECK)
+    if safe_area_check is not None:
+        findings.extend(
+            _safe_area_margin_findings(
+                pdf_path,
+                [*text_bounds_evidence, *object_bounds_evidence],
+                safe_area_check.severity,
+                safe_area_check.params,
+            )
+        )
+
     special_color_evidence = [item for item in evidence if _is_special_color_usage_evidence(item)]
     registration_color_check = target.check(REGISTRATION_COLOR_MISUSE_CHECK)
     if registration_color_check is not None:
@@ -283,7 +298,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
         "text_size_evidence=%s output_intent_evidence=%s transparency_evidence=%s "
-        "object_bounds_evidence=%s special_color_evidence=%s overprint_evidence=%s "
+        "object_bounds_evidence=%s text_bounds_evidence=%s special_color_evidence=%s overprint_evidence=%s "
         "annotations_evidence=%s document_actions_evidence=%s embedded_files_evidence=%s "
         "forms_evidence=%s page_content_evidence=%s pdf_version_evidence=%s "
         "xmp_standards_evidence=%s document_info_evidence=%s findings=%s",
@@ -294,6 +309,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         len(output_intent_evidence),
         len(transparency_evidence),
         len(object_bounds_evidence),
+        len(text_bounds_evidence),
         len(special_color_evidence),
         len(overprint_evidence),
         len(annotations_evidence),
@@ -338,6 +354,10 @@ def _is_transparency_features_evidence(item: Any) -> bool:
 
 def _is_object_bounds_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == OBJECT_BOUNDS_EVIDENCE
+
+
+def _is_text_bounds_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == TEXT_BOUNDS_EVIDENCE
 
 
 def _is_special_color_usage_evidence(item: Any) -> bool:
@@ -807,6 +827,92 @@ def _object_bounds_within_box_findings(
 
     findings.sort(
         key=lambda finding: (finding.page or 0, finding.object_ref or "", finding.observed["object_type"] or "")
+    )
+    return findings
+
+
+def _safe_area_margin_findings(
+    pdf_path: Path,
+    evidence: list[dict[str, Any]],
+    severity: Severity,
+    params: dict[str, Any],
+) -> list[Finding]:
+    box_name = str(params.get("box", "TrimBox"))
+    pdf_box_key = BOX_KEYS.get(box_name)
+    if pdf_box_key is None:
+        raise ValueError(f"check '{SAFE_AREA_MARGIN_CHECK}' has unsupported box '{box_name}'")
+
+    tolerance = float(params.get("tolerance_pt", 0))
+    margins = _safe_area_margins(params)
+    include_object_types = set(_string_list(params.get("include_object_types")) or ["text", "image", "form"])
+    ignore_crossing_trim = params.get("ignore_objects_crossing_trim", True) is not False
+    page_boxes = _read_page_boxes(pdf_path, pdf_box_key)
+
+    findings = []
+    for item in evidence:
+        object_type = item.get("object_type")
+        if not isinstance(object_type, str) or object_type not in include_object_types:
+            continue
+        page = item.get("page")
+        if not isinstance(page, int):
+            continue
+        box_bounds = page_boxes.get(page)
+        if box_bounds is None:
+            continue
+        bounds = _bounds_or_none(item.get("bounds_pt"))
+        if bounds is None:
+            continue
+        if object_type != "text" and ignore_crossing_trim and _outside_amounts(bounds, box_bounds, tolerance):
+            continue
+
+        violations = _safe_area_violations(bounds, box_bounds, margins, tolerance)
+        if not violations:
+            continue
+
+        observed = {
+            "object_type": object_type,
+            "bounds_pt": bounds,
+            "box": box_name,
+            "box_bounds_pt": box_bounds,
+            "violations": violations,
+        }
+        if object_type == "text":
+            observed.update(
+                {
+                    "font_name": item.get("font_name"),
+                    "subtype": item.get("subtype"),
+                    "effective_size_pt": item.get("effective_size_pt"),
+                }
+            )
+
+        findings.append(
+            Finding(
+                check_id=SAFE_AREA_MARGIN_CHECK,
+                category="geometry",
+                severity=severity,
+                message=f"Content is inside the configured safe-area margin from {box_name}.",
+                analyzer="pdfbox",
+                source_tool="pdfbox",
+                page=page,
+                object_ref=_resource_ref(item),
+                observed=observed,
+                threshold={
+                    "box": box_name,
+                    "margins_pt": margins,
+                    "include_object_types": sorted(include_object_types),
+                    "ignore_objects_crossing_trim": ignore_crossing_trim,
+                    "tolerance_pt": tolerance,
+                },
+            )
+        )
+
+    findings.sort(
+        key=lambda finding: (
+            finding.page or 0,
+            finding.object_ref or "",
+            finding.observed["object_type"],
+            sorted(finding.observed["violations"]),
+        )
     )
     return findings
 
@@ -1404,6 +1510,41 @@ def _outside_amounts(
     return outside
 
 
+def _safe_area_margins(params: dict[str, Any]) -> dict[str, float]:
+    raw_margins = params.get("margins_pt")
+    if isinstance(raw_margins, dict):
+        return {
+            "left": _number_or_default(raw_margins.get("left"), 18.0),
+            "right": _number_or_default(raw_margins.get("right"), 18.0),
+            "top": _number_or_default(raw_margins.get("top"), 18.0),
+            "bottom": _number_or_default(raw_margins.get("bottom"), 18.0),
+        }
+    margin = _number_or_default(params.get("margin_pt"), 18.0)
+    return {"left": margin, "right": margin, "top": margin, "bottom": margin}
+
+
+def _safe_area_violations(
+    object_bounds: dict[str, float],
+    box_bounds: dict[str, float],
+    margins: dict[str, float],
+    tolerance: float,
+) -> dict[str, float]:
+    violations = {}
+    left_distance = object_bounds["left"] - box_bounds["left"]
+    bottom_distance = object_bounds["bottom"] - box_bounds["bottom"]
+    right_distance = box_bounds["right"] - object_bounds["right"]
+    top_distance = box_bounds["top"] - object_bounds["top"]
+    if margins["left"] - left_distance > tolerance:
+        violations["left_pt"] = margins["left"] - left_distance
+    if margins["bottom"] - bottom_distance > tolerance:
+        violations["bottom_pt"] = margins["bottom"] - bottom_distance
+    if margins["right"] - right_distance > tolerance:
+        violations["right_pt"] = margins["right"] - right_distance
+    if margins["top"] - top_distance > tolerance:
+        violations["top_pt"] = margins["top"] - top_distance
+    return violations
+
+
 def _required_number(params: dict[str, Any], name: str, check_id: str) -> float:
     value = params.get(name)
     if not isinstance(value, int | float):
@@ -1415,6 +1556,11 @@ def _number_or_none(value: Any) -> float | None:
     if isinstance(value, int | float):
         return float(value)
     return None
+
+
+def _number_or_default(value: Any, default: float) -> float:
+    number = _number_or_none(value)
+    return default if number is None else number
 
 
 def _image_metadata_observed(item: dict[str, Any]) -> dict[str, Any]:

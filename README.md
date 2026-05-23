@@ -180,6 +180,7 @@ jq '.findings[]' report.json
 - `geometry.trim_size_matches`
 - `geometry.bleed_margin_at_least`
 - `geometry.object_bounds_within_box`: placed image/Form XObject bounds within a configured page box
+- `geometry.safe_area_margin`: text, image, and Form XObject bounds too close to a configured page box edge
 
 ## Target Config
 
@@ -382,6 +383,21 @@ checks:
     severity: warning
     box: BleedBox
     tolerance_pt: 0.5
+  geometry.safe_area_margin:
+    enabled: true
+    severity: warning
+    box: TrimBox
+    margins_pt:
+      left: 18
+      right: 18
+      top: 18
+      bottom: 18
+    include_object_types:
+      - text
+      - image
+      - form
+    ignore_objects_crossing_trim: true
+    tolerance_pt: 0.5
 ```
 
 Standards metadata checks detect declared metadata only. They do not validate full PDF/A or PDF/X conformance.
@@ -403,6 +419,7 @@ Severity levels:
 - Print target requires an OutputIntent; ebook target disables that requirement.
 - Transparency policy checks cover applied graphics states and directly used transparency-group XObjects in page and Form XObject content.
 - Structural bleed checks compare BleedBox margins against TrimBox; they do not verify that artwork visually fills the bleed area.
+- Safe-area checks are geometric heuristics. They detect content near TrimBox edges, but do not decide whether that content is semantically important.
 - Object bounds checks currently cover placed images and Form XObjects, not text, vector paths, annotations, patterns, or raster-derived artwork.
 - Interactive checks do not validate external URLs or internal destinations, and JavaScript source is not included in reports.
 - Blank-page detection is structural, not rendered visual analysis; white-on-white content still counts as nonblank.
