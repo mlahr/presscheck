@@ -16,6 +16,7 @@ application {
 dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
     implementation("org.apache.pdfbox:pdfbox:3.0.7")
+    implementation("org.apache.pdfbox:xmpbox:3.0.7")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
 }
@@ -38,4 +39,3 @@ tasks.register<Jar>("fatJar") {
         }
     })
 }
-

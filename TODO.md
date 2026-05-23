@@ -34,6 +34,20 @@ Still missing:
 
 - Cover vs interior page geometry
 
+### PDF Standards and Conformance Intent
+
+Implemented:
+
+- PDF/X detection from declared XMP metadata
+- PDF/A detection from declared XMP metadata
+- PDF version policy
+- Producer/creator metadata policy
+
+Still missing:
+
+- OutputIntent profile details
+- Deeper metadata consistency
+
 ## Remaining Major Missing Checks
 
 ### Bleed Content Quality
@@ -65,11 +79,8 @@ These are critical for print books.
 
 ### PDF Standards and Conformance Intent
 
-- PDF/X detection
-- PDF/A detection
-- PDF version policy
 - OutputIntent profile details
-- Metadata consistency
+- Deeper metadata consistency
 
 ### Deeper Color Checks
 
@@ -114,7 +125,7 @@ Mostly ebook-focused.
 
 ## Suggested Priority
 
-1. PDF/X, PDF version, and standards metadata
-2. Cover-specific checks
-3. Safe-area and bleed-content analysis
-4. Deeper color checks such as TAC and rich black
+1. Cover-specific checks
+2. Safe-area and bleed-content analysis
+3. Deeper color checks such as TAC and rich black
+4. OutputIntent profile details and deeper metadata consistency

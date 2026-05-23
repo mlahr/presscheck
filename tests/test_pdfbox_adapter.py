@@ -1939,3 +1939,269 @@ def test_pdfbox_adapter_allows_blank_pages_up_to_limit(tmp_path: Path, monkeypat
     )
 
     assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_maps_pdf_version_policy(tmp_path: Path, monkeypatch) -> None:
+    _fake_pdfbox_stdout(
+        tmp_path,
+        monkeypatch,
+        """
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "document_metadata.pdf_version",
+      "category": "document_metadata",
+      "scope": "document",
+      "document_version": "1.7",
+      "catalog_version": "2.0",
+      "effective_version": "2.0"
+    }
+  ]
+}
+""",
+    )
+    target = _metadata_target(
+        "document_metadata.pdf_version_policy",
+        Severity.warning,
+        {"max_version": "1.7"},
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "document_metadata.pdf_version_policy"
+    assert findings[0].severity == Severity.warning
+    assert findings[0].observed["effective_version"] == "2.0"
+    assert findings[0].observed["violations"] == {"max_version": "1.7"}
+
+
+def test_pdfbox_adapter_allows_allowed_pdf_version(tmp_path: Path, monkeypatch) -> None:
+    _fake_pdfbox_stdout(
+        tmp_path,
+        monkeypatch,
+        """
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "document_metadata.pdf_version",
+      "category": "document_metadata",
+      "scope": "document",
+      "effective_version": "1.7"
+    }
+  ]
+}
+""",
+    )
+    target = _metadata_target(
+        "document_metadata.pdf_version_policy",
+        Severity.warning,
+        {"allowed_versions": ["1.7"]},
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_reports_missing_required_pdfx(tmp_path: Path, monkeypatch) -> None:
+    _fake_pdfbox_stdout(
+        tmp_path,
+        monkeypatch,
+        """
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "document_metadata.xmp_standards",
+      "category": "document_metadata",
+      "scope": "document",
+      "has_xmp": false,
+      "xmp_parseable": false
+    }
+  ]
+}
+""",
+    )
+    target = _metadata_target(
+        "document_metadata.pdfx_policy",
+        Severity.error,
+        {"require_pdfx": True},
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "document_metadata.pdfx_policy"
+    assert findings[0].observed["violations"] == {"require_pdfx": True}
+
+
+def test_pdfbox_adapter_reports_disallowed_pdfx_version(tmp_path: Path, monkeypatch) -> None:
+    _fake_pdfbox_stdout(
+        tmp_path,
+        monkeypatch,
+        """
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "document_metadata.xmp_standards",
+      "category": "document_metadata",
+      "scope": "document",
+      "has_xmp": true,
+      "xmp_parseable": true,
+      "pdfx_version": "PDF/X-1a:2001",
+      "pdfx_conformance": "PDF/X-1a:2001"
+    }
+  ]
+}
+""",
+    )
+    target = _metadata_target(
+        "document_metadata.pdfx_policy",
+        Severity.warning,
+        {"allowed_versions": ["PDF/X-4"]},
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].observed["pdfx_version"] == "PDF/X-1a:2001"
+    assert findings[0].observed["violations"] == {"allowed_versions": ["PDF/X-4"]}
+
+
+def test_pdfbox_adapter_reports_missing_required_pdfa(tmp_path: Path, monkeypatch) -> None:
+    _fake_pdfbox_stdout(
+        tmp_path,
+        monkeypatch,
+        """
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "document_metadata.xmp_standards",
+      "category": "document_metadata",
+      "scope": "document",
+      "has_xmp": true,
+      "xmp_parseable": true
+    }
+  ]
+}
+""",
+    )
+    target = _metadata_target(
+        "document_metadata.pdfa_policy",
+        Severity.error,
+        {"require_pdfa": True},
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "document_metadata.pdfa_policy"
+    assert findings[0].observed["violations"] == {"require_pdfa": True}
+
+
+def test_pdfbox_adapter_treats_empty_pdfa_allowed_parts_as_unrestricted(tmp_path: Path, monkeypatch) -> None:
+    _fake_pdfbox_stdout(
+        tmp_path,
+        monkeypatch,
+        """
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "document_metadata.xmp_standards",
+      "category": "document_metadata",
+      "scope": "document",
+      "has_xmp": true,
+      "xmp_parseable": true,
+      "pdfa_part": 2,
+      "pdfa_conformance": "B"
+    }
+  ]
+}
+""",
+    )
+    target = _metadata_target(
+        "document_metadata.pdfa_policy",
+        Severity.info,
+        {"require_pdfa": False, "allowed_parts": [], "allowed_conformance": []},
+    )
+
+    assert pdfbox.analyze(tmp_path / "input.pdf", target) == []
+
+
+def test_pdfbox_adapter_reports_producer_policy_match(tmp_path: Path, monkeypatch) -> None:
+    _fake_pdfbox_stdout(
+        tmp_path,
+        monkeypatch,
+        """
+{
+  "ok": true,
+  "analyzer": "pdfbox",
+  "metadata": {"page_count": 1},
+  "evidence": [
+    {
+      "check_id": "document_metadata.info",
+      "category": "document_metadata",
+      "scope": "document",
+      "producer": "BadProducer 1.0",
+      "creator": "GoodCreator"
+    }
+  ]
+}
+""",
+    )
+    target = _metadata_target(
+        "document_metadata.producer_policy",
+        Severity.warning,
+        {"disallowed_contains": ["BadProducer"]},
+    )
+
+    findings = pdfbox.analyze(tmp_path / "input.pdf", target)
+
+    assert len(findings) == 1
+    assert findings[0].check_id == "document_metadata.producer_policy"
+    assert findings[0].observed == {
+        "field": "producer",
+        "value": "BadProducer 1.0",
+        "matched": "BadProducer",
+        "match_type": "disallowed_contains",
+    }
+
+
+def _fake_pdfbox_stdout(tmp_path: Path, monkeypatch, stdout: str) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=stdout),
+    )
+
+
+def _metadata_target(check_id: str, severity: Severity, params: dict) -> TargetConfig:
+    return TargetConfig(
+        fail_at=Severity.error,
+        checks={
+            check_id: CheckConfig(
+                check_id=check_id,
+                enabled=True,
+                severity=severity,
+                params=params,
+            )
+        },
+    )

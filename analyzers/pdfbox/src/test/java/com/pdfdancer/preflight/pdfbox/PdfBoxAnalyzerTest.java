@@ -7,6 +7,8 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
 import org.apache.pdfbox.pdmodel.PDEmbeddedFilesNameTreeNode;
+import org.apache.pdfbox.pdmodel.PDDocumentInformation;
+import org.apache.pdfbox.pdmodel.common.PDMetadata;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.filespecification.PDComplexFileSpecification;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
@@ -31,13 +33,18 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.pdmodel.interactive.form.PDTextField;
 import org.apache.pdfbox.util.Matrix;
+import org.apache.xmpbox.XMPMetadata;
+import org.apache.xmpbox.schema.PDFAIdentificationSchema;
+import org.apache.xmpbox.xml.XmpSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -203,6 +210,112 @@ class PdfBoxAnalyzerTest {
         assertEquals("sRGB IEC61966-2.1", outputIntents.get(0).get("output_condition_identifier"));
         assertEquals("http://www.color.org", outputIntents.get(0).get("registry_name"));
         assertEquals(true, outputIntents.get(0).get("has_dest_output_profile"));
+    }
+
+    @Test
+    void reportsPdfVersionEvidence() throws Exception {
+        File pdf = tempDir.resolve("pdf-version.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.setVersion(1.7f);
+            document.getDocumentCatalog().setVersion("2.0");
+            document.addPage(new PDPage());
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "document_metadata.pdf_version");
+        assertEquals("document_metadata", evidence.get("category"));
+        assertEquals("document", evidence.get("scope"));
+        assertEquals("2.0", evidence.get("document_version"));
+        assertEquals("2.0", evidence.get("catalog_version"));
+        assertEquals("2.0", evidence.get("effective_version"));
+    }
+
+    @Test
+    void reportsDocumentInfoEvidence() throws Exception {
+        File pdf = tempDir.resolve("document-info.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            PDDocumentInformation info = new PDDocumentInformation();
+            info.setTitle("Book Title");
+            info.setAuthor("Author Name");
+            info.setCreator("Layout App");
+            info.setProducer("PDF Producer");
+            document.setDocumentInformation(info);
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "document_metadata.info");
+        assertEquals("Book Title", evidence.get("title"));
+        assertEquals("Author Name", evidence.get("author"));
+        assertEquals("Layout App", evidence.get("creator"));
+        assertEquals("PDF Producer", evidence.get("producer"));
+    }
+
+    @Test
+    void reportsPdfaXmpEvidence() throws Exception {
+        File pdf = tempDir.resolve("pdfa-xmp.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            XMPMetadata xmp = XMPMetadata.createXMPMetadata();
+            PDFAIdentificationSchema pdfa = xmp.createAndAddPDFAIdentificationSchema();
+            pdfa.setPart(2);
+            pdfa.setConformance("B");
+            PDMetadata metadata = new PDMetadata(document);
+            metadata.importXMPMetadata(serializeXmp(xmp));
+            document.getDocumentCatalog().setMetadata(metadata);
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "document_metadata.xmp_standards");
+        assertEquals(true, evidence.get("has_xmp"));
+        assertEquals(true, evidence.get("xmp_parseable"));
+        assertEquals(2, evidence.get("pdfa_part"));
+        assertEquals("B", evidence.get("pdfa_conformance"));
+    }
+
+    @Test
+    void reportsPdfxXmpEvidence() throws Exception {
+        File pdf = tempDir.resolve("pdfx-xmp.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            PDMetadata metadata = new PDMetadata(document);
+            metadata.importXMPMetadata(pdfxXmp().getBytes(StandardCharsets.UTF_8));
+            document.getDocumentCatalog().setMetadata(metadata);
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "document_metadata.xmp_standards");
+        assertEquals(true, evidence.get("has_xmp"));
+        assertEquals(true, evidence.get("xmp_parseable"));
+        assertEquals("PDF/X-4", evidence.get("pdfx_version"));
+        assertEquals("PDF/X-4", evidence.get("pdfx_conformance"));
+    }
+
+    @Test
+    void reportsMalformedXmpEvidence() throws Exception {
+        File pdf = tempDir.resolve("malformed-xmp.pdf").toFile();
+        try (PDDocument document = new PDDocument()) {
+            document.addPage(new PDPage());
+            PDMetadata metadata = new PDMetadata(document);
+            metadata.importXMPMetadata("<x:xmpmeta>".getBytes(StandardCharsets.UTF_8));
+            document.getDocumentCatalog().setMetadata(metadata);
+            document.save(pdf);
+        }
+
+        Map<String, Object> result = PdfBoxAnalyzer.analyze(pdf);
+
+        Map<String, Object> evidence = firstEvidenceFor(result, "document_metadata.xmp_standards");
+        assertEquals(true, evidence.get("has_xmp"));
+        assertEquals(false, evidence.get("xmp_parseable"));
+        assertEquals("XmpParsingException", evidence.get("parse_error_type"));
     }
 
     @Test
@@ -823,6 +936,27 @@ class PdfBoxAnalyzerTest {
 
     private byte[] minimalRgbIccProfile() {
         return java.awt.color.ICC_Profile.getInstance(java.awt.color.ColorSpace.CS_sRGB).getData();
+    }
+
+    private byte[] serializeXmp(XMPMetadata xmp) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        new XmpSerializer().serialize(xmp, output, true);
+        return output.toByteArray();
+    }
+
+    private String pdfxXmp() {
+        return """
+                <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+                <x:xmpmeta xmlns:x="adobe:ns:meta/">
+                  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                    <rdf:Description rdf:about=""
+                      xmlns:pdfx="http://ns.adobe.com/pdfx/1.3/"
+                      pdfx:GTS_PDFXVersion="PDF/X-4"
+                      pdfx:GTS_PDFXConformance="PDF/X-4"/>
+                  </rdf:RDF>
+                </x:xmpmeta>
+                <?xpacket end="w"?>
+                """;
     }
 
     private PDSeparation separationColorSpace(String colorantName) throws Exception {

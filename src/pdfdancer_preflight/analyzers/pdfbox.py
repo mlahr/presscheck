@@ -32,6 +32,10 @@ JAVASCRIPT_POLICY_CHECK = "interactive.javascript_policy"
 EMBEDDED_FILES_POLICY_CHECK = "interactive.embedded_files_policy"
 FORM_POLICY_CHECK = "interactive.form_policy"
 BLANK_PAGE_POLICY_CHECK = "pages.blank_policy"
+PDF_VERSION_POLICY_CHECK = "document_metadata.pdf_version_policy"
+PDFA_POLICY_CHECK = "document_metadata.pdfa_policy"
+PDFX_POLICY_CHECK = "document_metadata.pdfx_policy"
+PRODUCER_POLICY_CHECK = "document_metadata.producer_policy"
 EFFECTIVE_RESOLUTION_EVIDENCE = "images.effective_resolution"
 TEXT_SIZE_EVIDENCE = "fonts.text_size"
 OUTPUT_INTENTS_EVIDENCE = "color.output_intents"
@@ -44,6 +48,9 @@ DOCUMENT_ACTIONS_EVIDENCE = "interactive.document_actions"
 EMBEDDED_FILES_EVIDENCE = "interactive.embedded_files"
 FORMS_EVIDENCE = "interactive.forms"
 PAGE_CONTENT_EVIDENCE = "pages.page_content"
+PDF_VERSION_EVIDENCE = "document_metadata.pdf_version"
+DOCUMENT_INFO_EVIDENCE = "document_metadata.info"
+XMP_STANDARDS_EVIDENCE = "document_metadata.xmp_standards"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
 BOX_KEYS = {
@@ -79,6 +86,10 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             target.check(EMBEDDED_FILES_POLICY_CHECK),
             target.check(FORM_POLICY_CHECK),
             target.check(BLANK_PAGE_POLICY_CHECK),
+            target.check(PDF_VERSION_POLICY_CHECK),
+            target.check(PDFA_POLICY_CHECK),
+            target.check(PDFX_POLICY_CHECK),
+            target.check(PRODUCER_POLICY_CHECK),
         )
         if check is not None
     ]
@@ -246,12 +257,36 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
             _blank_page_policy_findings(page_content_evidence, blank_page_check.severity, blank_page_check.params)
         )
 
+    pdf_version_evidence = [item for item in evidence if _is_pdf_version_evidence(item)]
+    pdf_version_check = target.check(PDF_VERSION_POLICY_CHECK)
+    if pdf_version_check is not None:
+        findings.extend(
+            _pdf_version_policy_findings(pdf_version_evidence, pdf_version_check.severity, pdf_version_check.params)
+        )
+
+    xmp_standards_evidence = [item for item in evidence if _is_xmp_standards_evidence(item)]
+    pdfa_check = target.check(PDFA_POLICY_CHECK)
+    if pdfa_check is not None:
+        findings.extend(_pdfa_policy_findings(xmp_standards_evidence, pdfa_check.severity, pdfa_check.params))
+
+    pdfx_check = target.check(PDFX_POLICY_CHECK)
+    if pdfx_check is not None:
+        findings.extend(_pdfx_policy_findings(xmp_standards_evidence, pdfx_check.severity, pdfx_check.params))
+
+    document_info_evidence = [item for item in evidence if _is_document_info_evidence(item)]
+    producer_check = target.check(PRODUCER_POLICY_CHECK)
+    if producer_check is not None:
+        findings.extend(
+            _producer_policy_findings(document_info_evidence, producer_check.severity, producer_check.params)
+        )
+
     logger.info(
         "PDFBox analyzer completed: evidence=%s font_evidence=%s image_evidence=%s "
         "text_size_evidence=%s output_intent_evidence=%s transparency_evidence=%s "
         "object_bounds_evidence=%s special_color_evidence=%s overprint_evidence=%s "
         "annotations_evidence=%s document_actions_evidence=%s embedded_files_evidence=%s "
-        "forms_evidence=%s page_content_evidence=%s findings=%s",
+        "forms_evidence=%s page_content_evidence=%s pdf_version_evidence=%s "
+        "xmp_standards_evidence=%s document_info_evidence=%s findings=%s",
         len(evidence),
         len(font_evidence),
         len(image_evidence),
@@ -266,6 +301,9 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
         len(embedded_files_evidence),
         len(forms_evidence),
         len(page_content_evidence),
+        len(pdf_version_evidence),
+        len(xmp_standards_evidence),
+        len(document_info_evidence),
         len(findings),
     )
     return findings
@@ -328,6 +366,18 @@ def _is_forms_evidence(item: Any) -> bool:
 
 def _is_page_content_evidence(item: Any) -> bool:
     return isinstance(item, dict) and item.get("check_id") == PAGE_CONTENT_EVIDENCE
+
+
+def _is_pdf_version_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == PDF_VERSION_EVIDENCE
+
+
+def _is_document_info_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == DOCUMENT_INFO_EVIDENCE
+
+
+def _is_xmp_standards_evidence(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("check_id") == XMP_STANDARDS_EVIDENCE
 
 
 def _group_non_embedded_font_findings(evidence: list[dict[str, Any]], severity: Severity) -> list[Finding]:
@@ -1120,6 +1170,185 @@ def _blank_page_policy_findings(
     ]
 
 
+def _pdf_version_policy_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    if not evidence:
+        return []
+    item = evidence[0]
+    effective_version = item.get("effective_version")
+    if not isinstance(effective_version, str):
+        return []
+
+    violations = {}
+    allowed_versions = _string_list(params.get("allowed_versions"))
+    if allowed_versions and effective_version not in allowed_versions:
+        violations["allowed_versions"] = allowed_versions
+
+    min_version = params.get("min_version")
+    if isinstance(min_version, str) and _version_tuple(effective_version) < _version_tuple(min_version):
+        violations["min_version"] = min_version
+
+    max_version = params.get("max_version")
+    if isinstance(max_version, str) and _version_tuple(effective_version) > _version_tuple(max_version):
+        violations["max_version"] = max_version
+
+    if not violations:
+        return []
+
+    return [
+        Finding(
+            check_id=PDF_VERSION_POLICY_CHECK,
+            category="document_metadata",
+            severity=severity,
+            message="PDF version does not match target policy.",
+            analyzer="pdfbox",
+            source_tool="pdfbox",
+            observed={
+                "document_version": item.get("document_version"),
+                "catalog_version": item.get("catalog_version"),
+                "effective_version": effective_version,
+                "violations": violations,
+            },
+            threshold={
+                key: value
+                for key, value in {
+                    "allowed_versions": allowed_versions,
+                    "min_version": min_version,
+                    "max_version": max_version,
+                }.items()
+                if value
+            },
+        )
+    ]
+
+
+def _pdfa_policy_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    item = evidence[0] if evidence else {}
+    pdfa_part = item.get("pdfa_part")
+    pdfa_conformance = item.get("pdfa_conformance")
+    require_pdfa = params.get("require_pdfa") is True
+    allowed_parts = _int_list(params.get("allowed_parts"))
+    allowed_conformance = _string_list(params.get("allowed_conformance"))
+
+    violations = {}
+    if require_pdfa and pdfa_part is None:
+        violations["require_pdfa"] = True
+    if allowed_parts and pdfa_part is not None and pdfa_part not in allowed_parts:
+        violations["allowed_parts"] = allowed_parts
+    if allowed_conformance and isinstance(pdfa_conformance, str) and pdfa_conformance not in allowed_conformance:
+        violations["allowed_conformance"] = allowed_conformance
+
+    if not violations:
+        return []
+
+    return [
+        Finding(
+            check_id=PDFA_POLICY_CHECK,
+            category="document_metadata",
+            severity=severity,
+            message="PDF/A identification does not match target policy.",
+            analyzer="pdfbox",
+            source_tool="pdfbox",
+            observed={
+                "has_xmp": item.get("has_xmp"),
+                "xmp_parseable": item.get("xmp_parseable"),
+                "pdfa_part": pdfa_part,
+                "pdfa_conformance": pdfa_conformance,
+                "violations": violations,
+            },
+            threshold={
+                "require_pdfa": require_pdfa,
+                "allowed_parts": allowed_parts,
+                "allowed_conformance": allowed_conformance,
+            },
+        )
+    ]
+
+
+def _pdfx_policy_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    item = evidence[0] if evidence else {}
+    pdfx_version = item.get("pdfx_version")
+    pdfx_conformance = item.get("pdfx_conformance")
+    require_pdfx = params.get("require_pdfx") is True
+    allowed_versions = _string_list(params.get("allowed_versions"))
+
+    violations = {}
+    if require_pdfx and pdfx_version is None:
+        violations["require_pdfx"] = True
+    if allowed_versions and isinstance(pdfx_version, str) and pdfx_version not in allowed_versions:
+        violations["allowed_versions"] = allowed_versions
+
+    if not violations:
+        return []
+
+    return [
+        Finding(
+            check_id=PDFX_POLICY_CHECK,
+            category="document_metadata",
+            severity=severity,
+            message="PDF/X identification does not match target policy.",
+            analyzer="pdfbox",
+            source_tool="pdfbox",
+            observed={
+                "has_xmp": item.get("has_xmp"),
+                "xmp_parseable": item.get("xmp_parseable"),
+                "pdfx_version": pdfx_version,
+                "pdfx_conformance": pdfx_conformance,
+                "violations": violations,
+            },
+            threshold={"require_pdfx": require_pdfx, "allowed_versions": allowed_versions},
+        )
+    ]
+
+
+def _producer_policy_findings(
+    evidence: list[dict[str, Any]], severity: Severity, params: dict[str, Any]
+) -> list[Finding]:
+    if not evidence:
+        return []
+
+    item = evidence[0]
+    disallowed = _string_list(params.get("disallowed_contains"))
+    warn = _string_list(params.get("warn_contains"))
+    findings = []
+    for field in ("producer", "creator"):
+        value = item.get(field)
+        if not isinstance(value, str):
+            continue
+        for match_type, needles in (("disallowed_contains", disallowed), ("warn_contains", warn)):
+            for needle in needles:
+                if needle.lower() not in value.lower():
+                    continue
+                findings.append(
+                    Finding(
+                        check_id=PRODUCER_POLICY_CHECK,
+                        category="document_metadata",
+                        severity=severity,
+                        message=f"Document {field} matches target producer policy.",
+                        analyzer="pdfbox",
+                        source_tool="pdfbox",
+                        observed={
+                            "field": field,
+                            "value": value,
+                            "matched": needle,
+                            "match_type": match_type,
+                        },
+                        threshold={
+                            "disallowed_contains": disallowed,
+                            "warn_contains": warn,
+                        },
+                    )
+                )
+
+    findings.sort(key=lambda finding: (finding.observed["field"], finding.observed["matched"]))
+    return findings
+
+
 def _read_page_boxes(pdf_path: Path, pdf_box_key: str) -> dict[int, dict[str, float]]:
     try:
         reader = PdfReader(str(pdf_path))
@@ -1224,6 +1453,16 @@ def _int_list(value: Any) -> list[int]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, int)]
+
+
+def _version_tuple(version: str) -> tuple[int, ...]:
+    parts = []
+    for part in version.split("."):
+        try:
+            parts.append(int(part))
+        except ValueError:
+            parts.append(0)
+    return tuple(parts)
 
 
 def _occurrences(item: dict[str, Any]) -> int:

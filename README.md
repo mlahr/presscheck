@@ -150,6 +150,10 @@ jq '.findings[]' report.json
 ## Current Checks
 
 - `document_integrity.ghostscript_processable`
+- `document_metadata.pdf_version_policy`: target-driven PDF version policy
+- `document_metadata.pdfa_policy`: declared PDF/A identification policy from XMP metadata
+- `document_metadata.pdfx_policy`: declared PDF/X identification policy from XMP metadata
+- `document_metadata.producer_policy`: target-driven producer/creator metadata policy
 - `pages.count_policy`: target-driven page count limits
 - `pages.parity_policy`: even/odd page count policy
 - `pages.size_consistency`: mixed page sizes by configured page box
@@ -194,6 +198,30 @@ checks:
   document_integrity.ghostscript_processable:
     enabled: true
     severity: error
+    timeout_seconds: 60
+  document_metadata.pdf_version_policy:
+    enabled: true
+    severity: warning
+    max_version: "1.7"
+    timeout_seconds: 60
+  document_metadata.pdfx_policy:
+    enabled: true
+    severity: warning
+    require_pdfx: false
+    allowed_versions: []
+    timeout_seconds: 60
+  document_metadata.pdfa_policy:
+    enabled: false
+    severity: info
+    require_pdfa: false
+    allowed_parts: []
+    allowed_conformance: []
+    timeout_seconds: 60
+  document_metadata.producer_policy:
+    enabled: true
+    severity: warning
+    disallowed_contains: []
+    warn_contains: []
     timeout_seconds: 60
   pages.count_policy:
     enabled: true
@@ -355,6 +383,8 @@ checks:
     box: BleedBox
     tolerance_pt: 0.5
 ```
+
+Standards metadata checks detect declared metadata only. They do not validate full PDF/A or PDF/X conformance.
 
 Severity levels:
 

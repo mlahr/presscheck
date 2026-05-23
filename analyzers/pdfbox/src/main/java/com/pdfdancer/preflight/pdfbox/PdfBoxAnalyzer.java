@@ -13,9 +13,11 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
+import org.apache.pdfbox.pdmodel.PDDocumentInformation;
 import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDDestinationOrAction;
+import org.apache.pdfbox.pdmodel.common.PDMetadata;
 import org.apache.pdfbox.pdmodel.common.filespecification.PDComplexFileSpecification;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
@@ -46,18 +48,34 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.util.Matrix;
 import org.apache.pdfbox.util.Vector;
+import org.apache.xmpbox.XMPMetadata;
+import org.apache.xmpbox.schema.PDFAIdentificationSchema;
+import org.apache.xmpbox.schema.XMPSchema;
+import org.apache.xmpbox.xml.DomXmpParser;
 
 import java.awt.geom.Point2D;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Calendar;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class PdfBoxAnalyzer {
     private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    private static final Pattern PDFX_VERSION_ELEMENT = Pattern.compile("<[^>]*GTS_PDFXVersion[^>]*>([^<]+)<");
+    private static final Pattern PDFX_CONFORMANCE_ELEMENT =
+            Pattern.compile("<[^>]*GTS_PDFXConformance[^>]*>([^<]+)<");
+    private static final Pattern PDFX_VERSION_ATTRIBUTE =
+            Pattern.compile("\\b[^\\s=]*GTS_PDFXVersion\\s*=\\s*['\"]([^'\"]+)['\"]");
+    private static final Pattern PDFX_CONFORMANCE_ATTRIBUTE =
+            Pattern.compile("\\b[^\\s=]*GTS_PDFXConformance\\s*=\\s*['\"]([^'\"]+)['\"]");
 
     private PdfBoxAnalyzer() {
     }
@@ -87,6 +105,7 @@ public final class PdfBoxAnalyzer {
     static Map<String, Object> analyze(File pdfFile) throws Exception {
         try (PDDocument document = Loader.loadPDF(pdfFile)) {
             List<Map<String, Object>> evidence = new ArrayList<>();
+            collectDocumentMetadataEvidence(document, evidence);
             collectOutputIntentEvidence(document, evidence);
             collectDocumentInteractiveEvidence(document, evidence);
             int pageNumber = 0;
@@ -154,6 +173,141 @@ public final class PdfBoxAnalyzer {
         item.put("count", outputIntents.size());
         item.put("output_intents", outputIntentItems);
         evidence.add(item);
+    }
+
+    private static void collectDocumentMetadataEvidence(PDDocument document, List<Map<String, Object>> evidence) {
+        collectPdfVersionEvidence(document, evidence);
+        collectDocumentInfoEvidence(document, evidence);
+        collectXmpStandardsEvidence(document, evidence);
+    }
+
+    private static void collectPdfVersionEvidence(PDDocument document, List<Map<String, Object>> evidence) {
+        String documentVersion = versionString(document.getVersion());
+        String catalogVersion = document.getDocumentCatalog().getVersion();
+        String effectiveVersion = catalogVersion == null ? documentVersion : maxVersion(documentVersion, catalogVersion);
+
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("check_id", "document_metadata.pdf_version");
+        item.put("category", "document_metadata");
+        item.put("scope", "document");
+        item.put("document_version", documentVersion);
+        item.put("catalog_version", catalogVersion);
+        item.put("effective_version", effectiveVersion);
+        evidence.add(item);
+    }
+
+    private static void collectDocumentInfoEvidence(PDDocument document, List<Map<String, Object>> evidence) {
+        PDDocumentInformation information = document.getDocumentInformation();
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("check_id", "document_metadata.info");
+        item.put("category", "document_metadata");
+        item.put("scope", "document");
+        item.put("title", information.getTitle());
+        item.put("author", information.getAuthor());
+        item.put("creator", information.getCreator());
+        item.put("producer", information.getProducer());
+        item.put("creation_date", calendarString(information.getCreationDate()));
+        item.put("modification_date", calendarString(information.getModificationDate()));
+        evidence.add(item);
+    }
+
+    private static void collectXmpStandardsEvidence(PDDocument document, List<Map<String, Object>> evidence) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("check_id", "document_metadata.xmp_standards");
+        item.put("category", "document_metadata");
+        item.put("scope", "document");
+
+        PDMetadata metadata = document.getDocumentCatalog().getMetadata();
+        item.put("has_xmp", metadata != null);
+        if (metadata == null) {
+            item.put("xmp_parseable", false);
+            evidence.add(item);
+            return;
+        }
+
+        try {
+            byte[] xmpBytes = metadata.exportXMPMetadata().readAllBytes();
+            DomXmpParser parser = new DomXmpParser();
+            parser.setStrictParsing(false);
+            XMPMetadata xmp = parser.parse(new ByteArrayInputStream(xmpBytes));
+            item.put("xmp_parseable", true);
+
+            PDFAIdentificationSchema pdfa = xmp.getPDFAIdentificationSchema();
+            if (pdfa != null) {
+                item.put("pdfa_part", pdfa.getPart());
+                item.put("pdfa_conformance", pdfa.getConformance());
+            }
+
+            collectPdfxFields(xmp, item);
+            collectPdfxFieldsFromXml(new String(xmpBytes, StandardCharsets.UTF_8), item);
+        } catch (Exception exception) {
+            item.put("xmp_parseable", false);
+            item.put("parse_error_type", exception.getClass().getSimpleName());
+        }
+
+        evidence.add(item);
+    }
+
+    private static void collectPdfxFields(XMPMetadata xmp, Map<String, Object> item) {
+        for (XMPSchema schema : xmp.getAllSchemas()) {
+            String version = textProperty(schema, "GTS_PDFXVersion");
+            if (version != null) {
+                item.put("pdfx_version", version);
+            }
+            String conformance = textProperty(schema, "GTS_PDFXConformance");
+            if (conformance != null) {
+                item.put("pdfx_conformance", conformance);
+            }
+        }
+    }
+
+    private static void collectPdfxFieldsFromXml(String xmpXml, Map<String, Object> item) {
+        if (!item.containsKey("pdfx_version")) {
+            String version = firstMatch(xmpXml, PDFX_VERSION_ATTRIBUTE);
+            if (version == null) {
+                version = firstMatch(xmpXml, PDFX_VERSION_ELEMENT);
+            }
+            if (version != null) {
+                item.put("pdfx_version", version);
+            }
+        }
+        if (!item.containsKey("pdfx_conformance")) {
+            String conformance = firstMatch(xmpXml, PDFX_CONFORMANCE_ATTRIBUTE);
+            if (conformance == null) {
+                conformance = firstMatch(xmpXml, PDFX_CONFORMANCE_ELEMENT);
+            }
+            if (conformance != null) {
+                item.put("pdfx_conformance", conformance);
+            }
+        }
+    }
+
+    private static String firstMatch(String value, Pattern pattern) {
+        Matcher matcher = pattern.matcher(value);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private static String textProperty(XMPSchema schema, String propertyName) {
+        try {
+            return schema.getUnqualifiedTextPropertyValue(propertyName);
+        } catch (Exception exception) {
+            return null;
+        }
+    }
+
+    private static String versionString(float version) {
+        return String.format(java.util.Locale.ROOT, "%.1f", version);
+    }
+
+    private static String maxVersion(String first, String second) {
+        return Double.parseDouble(first) >= Double.parseDouble(second) ? first : second;
+    }
+
+    private static String calendarString(Calendar calendar) {
+        if (calendar == null) {
+            return null;
+        }
+        return calendar.toInstant().toString();
     }
 
     private static void collectDocumentInteractiveEvidence(PDDocument document, List<Map<String, Object>> evidence) throws IOException {
