@@ -1,2 +1,0 @@
-"""PDFdancer preflight prototype."""
-

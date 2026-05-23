@@ -1,5 +1,5 @@
-from pdfdancer_preflight.models import Finding, Severity, should_fail
-from pdfdancer_preflight.runner import summarize_findings
+from presscheck.models import Finding, Severity, should_fail
+from presscheck.runner import summarize_findings
 
 
 def test_should_fail_at_configured_threshold() -> None:

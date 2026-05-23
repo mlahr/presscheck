@@ -6,7 +6,7 @@ from typing import Any
 
 from pypdf import PdfReader
 
-from pdfdancer_preflight.models import Finding, TargetConfig
+from presscheck.models import Finding, TargetConfig
 
 PAGE_BOXES_CHECK = "geometry.page_boxes_present"
 TRIM_SIZE_CHECK = "geometry.trim_size_matches"

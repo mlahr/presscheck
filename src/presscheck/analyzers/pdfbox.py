@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from pypdf import PdfReader
 
-from pdfdancer_preflight.models import Finding, Severity, TargetConfig
+from presscheck.models import Finding, Severity, TargetConfig
 
 NON_EMBEDDED_FONTS_CHECK = "fonts.non_embedded"
 MINIMUM_TEXT_SIZE_CHECK = "fonts.minimum_text_size"
@@ -326,7 +326,7 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
 
 
 def _jar_path() -> Path:
-    override = os.environ.get("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR")
+    override = os.environ.get("PRESSCHECK_PDFBOX_ANALYZER_JAR")
     if override:
         return Path(override)
     return Path.cwd() / "analyzers" / "pdfbox" / "build" / "libs" / "pdfbox-analyzer.jar"

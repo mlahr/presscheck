@@ -12,7 +12,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "pdfdancer-preflight"
+rootProject.name = "presscheck"
 
 include(":analyzers:pdfbox")
 

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pdfdancer_preflight.compare import compare_results, comparison_output_paths, format_comparison
+from presscheck.compare import compare_results, comparison_output_paths, format_comparison
 
 
 def test_compare_results_classifies_summary_changes(tmp_path: Path) -> None:

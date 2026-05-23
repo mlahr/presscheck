@@ -7,8 +7,8 @@ from types import SimpleNamespace
 from pypdf import PdfWriter
 from pypdf.generic import NameObject, RectangleObject
 
-from pdfdancer_preflight.analyzers import pdfbox
-from pdfdancer_preflight.models import CheckConfig, Severity, TargetConfig
+from presscheck.analyzers import pdfbox
+from presscheck.models import CheckConfig, Severity, TargetConfig
 
 
 def _target() -> TargetConfig:
@@ -132,7 +132,7 @@ def _write_pdf_with_trim_box(path: Path, trim_box=(0, 0, 100, 100)) -> None:
 def test_pdfbox_adapter_groups_non_embedded_font_evidence(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
 
     def fake_run(*args, **kwargs):
         return SimpleNamespace(
@@ -232,7 +232,7 @@ def test_pdfbox_adapter_groups_non_embedded_font_evidence(tmp_path: Path, monkey
 
 
 def test_pdfbox_adapter_fails_closed_when_jar_missing(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(tmp_path / "missing.jar"))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(tmp_path / "missing.jar"))
 
     findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
 
@@ -244,7 +244,7 @@ def test_pdfbox_adapter_fails_closed_when_jar_missing(tmp_path: Path, monkeypatc
 def test_pdfbox_adapter_fails_closed_on_invalid_json(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="not json"))
 
     findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
@@ -255,7 +255,7 @@ def test_pdfbox_adapter_fails_closed_on_invalid_json(tmp_path: Path, monkeypatch
 def test_pdfbox_adapter_maps_minimum_text_size_evidence(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -336,7 +336,7 @@ def test_pdfbox_adapter_maps_minimum_text_size_evidence(tmp_path: Path, monkeypa
 def test_pdfbox_adapter_allows_text_at_minimum_size(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -381,7 +381,7 @@ def test_pdfbox_adapter_allows_text_at_minimum_size(tmp_path: Path, monkeypatch)
 def test_pdfbox_adapter_rejects_missing_minimum_text_size_threshold(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -413,7 +413,7 @@ def test_pdfbox_adapter_rejects_missing_minimum_text_size_threshold(tmp_path: Pa
 def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -546,7 +546,7 @@ def test_pdfbox_adapter_maps_low_resolution_image_evidence(tmp_path: Path, monke
 def test_pdfbox_adapter_maps_image_filter_policy(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -616,7 +616,7 @@ def test_pdfbox_adapter_maps_image_filter_policy(tmp_path: Path, monkeypatch) ->
 def test_pdfbox_adapter_skips_image_compression_checks_when_disabled(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -671,7 +671,7 @@ def test_pdfbox_adapter_skips_image_compression_checks_when_disabled(tmp_path: P
 def test_pdfbox_adapter_allows_null_or_omitted_color_space_policy(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -745,7 +745,7 @@ def test_pdfbox_adapter_allows_null_or_omitted_color_space_policy(tmp_path: Path
 def test_pdfbox_adapter_rejects_invalid_color_space_policy_severity(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -793,7 +793,7 @@ def test_pdfbox_adapter_rejects_invalid_color_space_policy_severity(tmp_path: Pa
 def test_pdfbox_adapter_reports_missing_output_intent(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -841,7 +841,7 @@ def test_pdfbox_adapter_reports_missing_output_intent(tmp_path: Path, monkeypatc
 def test_pdfbox_adapter_allows_present_output_intent(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -883,7 +883,7 @@ def test_pdfbox_adapter_allows_present_output_intent(tmp_path: Path, monkeypatch
 def test_pdfbox_adapter_maps_registration_color_misuse(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -945,7 +945,7 @@ def test_pdfbox_adapter_maps_registration_color_misuse(tmp_path: Path, monkeypat
 def test_pdfbox_adapter_maps_spot_color_policy(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1009,7 +1009,7 @@ def test_pdfbox_adapter_maps_spot_color_policy(tmp_path: Path, monkeypatch) -> N
 def test_pdfbox_adapter_maps_overprint_policy(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1067,7 +1067,7 @@ def test_pdfbox_adapter_maps_overprint_policy(tmp_path: Path, monkeypatch) -> No
 def test_pdfbox_adapter_skips_print_color_checks_when_disabled(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1130,7 +1130,7 @@ def test_pdfbox_adapter_skips_print_color_checks_when_disabled(tmp_path: Path, m
 def test_pdfbox_adapter_maps_transparency_policy_evidence(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1199,7 +1199,7 @@ def test_pdfbox_adapter_maps_transparency_policy_evidence(tmp_path: Path, monkey
 def test_pdfbox_adapter_allows_null_or_omitted_transparency_features(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1243,7 +1243,7 @@ def test_pdfbox_adapter_allows_null_or_omitted_transparency_features(tmp_path: P
 def test_pdfbox_adapter_falls_back_to_resource_name_without_resource_path(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1290,7 +1290,7 @@ def test_pdfbox_adapter_reports_object_bounds_outside_configured_box(tmp_path: P
     _write_pdf_with_bleed_box(pdf, bleed_box=(0, 0, 100, 100))
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1351,7 +1351,7 @@ def test_pdfbox_adapter_allows_object_bounds_inside_configured_box(tmp_path: Pat
     _write_pdf_with_bleed_box(pdf, bleed_box=(0, 0, 100, 100))
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1399,7 +1399,7 @@ def test_pdfbox_adapter_skips_object_bounds_when_configured_box_is_missing(tmp_p
         writer.write(file)
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1444,7 +1444,7 @@ def test_pdfbox_adapter_reports_text_inside_safe_area_margin(tmp_path: Path, mon
     _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1504,7 +1504,7 @@ def test_pdfbox_adapter_allows_text_outside_safe_area_margin(tmp_path: Path, mon
     _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1537,7 +1537,7 @@ def test_pdfbox_adapter_reports_image_inside_safe_area_margin(tmp_path: Path, mo
     _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1575,7 +1575,7 @@ def test_pdfbox_adapter_ignores_image_crossing_trim_for_safe_area(tmp_path: Path
     _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1611,7 +1611,7 @@ def test_pdfbox_adapter_reports_crossing_image_when_safe_area_ignore_is_disabled
     _write_pdf_with_trim_box(pdf, trim_box=(0, 0, 100, 100))
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1657,7 +1657,7 @@ def test_pdfbox_adapter_skips_safe_area_when_configured_box_is_missing(tmp_path:
         writer.write(file)
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1688,7 +1688,7 @@ def test_pdfbox_adapter_skips_safe_area_when_configured_box_is_missing(tmp_path:
 def test_pdfbox_adapter_rejects_invalid_transparency_policy_severity(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1736,7 +1736,7 @@ def test_pdfbox_adapter_rejects_invalid_transparency_policy_severity(tmp_path: P
 def test_pdfbox_adapter_maps_annotation_policy(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1790,7 +1790,7 @@ def test_pdfbox_adapter_maps_annotation_policy(tmp_path: Path, monkeypatch) -> N
 def test_pdfbox_adapter_allows_ebook_http_link(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1844,7 +1844,7 @@ def test_pdfbox_adapter_allows_ebook_http_link(tmp_path: Path, monkeypatch) -> N
 def test_pdfbox_adapter_reports_disallowed_link_uri(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1903,7 +1903,7 @@ def test_pdfbox_adapter_reports_annotation_outside_configured_box(tmp_path: Path
         writer.write(file)
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -1953,7 +1953,7 @@ def test_pdfbox_adapter_reports_annotation_outside_configured_box(tmp_path: Path
 def test_pdfbox_adapter_maps_javascript_embedded_files_and_forms(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -2038,7 +2038,7 @@ def test_pdfbox_adapter_maps_javascript_embedded_files_and_forms(tmp_path: Path,
 def test_pdfbox_adapter_maps_blank_page_policy(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -2124,7 +2124,7 @@ def test_pdfbox_adapter_maps_blank_page_policy(tmp_path: Path, monkeypatch) -> N
 def test_pdfbox_adapter_allows_trailing_blank_page(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -2161,7 +2161,7 @@ def test_pdfbox_adapter_allows_trailing_blank_page(tmp_path: Path, monkeypatch) 
 def test_pdfbox_adapter_allows_blank_pages_up_to_limit(tmp_path: Path, monkeypatch) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -2439,7 +2439,7 @@ def test_pdfbox_adapter_reports_producer_policy_match(tmp_path: Path, monkeypatc
 def _fake_pdfbox_stdout(tmp_path: Path, monkeypatch, stdout: str) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
-    monkeypatch.setenv("PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
     monkeypatch.setattr(
         subprocess,
         "run",

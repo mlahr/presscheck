@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from pdfdancer_preflight.analyzers import geometry, ghostscript, pdfbox
-from pdfdancer_preflight.models import Finding, TargetConfig, should_fail
+from presscheck.analyzers import geometry, ghostscript, pdfbox
+from presscheck.models import Finding, TargetConfig, should_fail
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from pdfdancer_preflight.models import Severity
-from pdfdancer_preflight.target_config import load_target_config
+from presscheck.models import Severity
+from presscheck.target_config import load_target_config
 
 
 def test_load_target_config(tmp_path: Path) -> None:

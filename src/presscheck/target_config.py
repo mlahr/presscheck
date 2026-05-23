@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from pdfdancer_preflight.models import CheckConfig, Severity, TargetConfig
+from presscheck.models import CheckConfig, Severity, TargetConfig
 
 
 def load_target_config(path: Path) -> TargetConfig:

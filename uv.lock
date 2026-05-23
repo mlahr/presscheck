@@ -71,7 +71,7 @@ wheels = [
 ]
 
 [[package]]
-name = "pdfdancer-preflight"
+name = "presscheck"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

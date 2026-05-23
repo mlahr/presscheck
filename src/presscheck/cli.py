@@ -7,10 +7,10 @@ from typing import Annotated
 
 import typer
 
-from pdfdancer_preflight.compare import compare_results, comparison_output_paths, format_comparison
-from pdfdancer_preflight.logging_config import configure_logging
-from pdfdancer_preflight.runner import run_preflight
-from pdfdancer_preflight.target_config import load_target_config
+from presscheck.compare import compare_results, comparison_output_paths, format_comparison
+from presscheck.logging_config import configure_logging
+from presscheck.runner import run_preflight
+from presscheck.target_config import load_target_config
 
 app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)

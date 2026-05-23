@@ -1,7 +1,7 @@
 [project]
-name = "pdfdancer-preflight"
+name = "presscheck"
 version = "0.1.0"
-description = "Architecture prototype for PDFdancer preflight checks"
+description = "CI-friendly PDF preflight checks for print and publishing workflows"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pdfdancer-preflight = "pdfdancer_preflight.cli:app"
+presscheck = "presscheck.cli:app"
 
 [dependency-groups]
 dev = [

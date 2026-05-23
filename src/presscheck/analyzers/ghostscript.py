@@ -4,7 +4,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from pdfdancer_preflight.models import Finding, TargetConfig
+from presscheck.models import Finding, TargetConfig
 
 CHECK_ID = "document_integrity.ghostscript_processable"
 logger = logging.getLogger(__name__)

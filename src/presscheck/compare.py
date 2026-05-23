@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pdfdancer_preflight.models import Severity
+from presscheck.models import Severity
 
 CHANGE_GROUPS = ("added", "resolved", "worsened", "improved", "changed_pages")
 

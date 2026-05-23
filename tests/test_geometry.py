@@ -3,8 +3,8 @@ from pathlib import Path
 from pypdf import PdfWriter
 from pypdf.generic import NameObject, RectangleObject
 
-from pdfdancer_preflight.analyzers.geometry import analyze
-from pdfdancer_preflight.models import CheckConfig, Severity, TargetConfig
+from presscheck.analyzers.geometry import analyze
+from presscheck.models import CheckConfig, Severity, TargetConfig
 
 
 def _target() -> TargetConfig:

@@ -1,8 +1,8 @@
-# PDFdancer Preflight
+# Presscheck
 
-Architecture prototype for an internal, CI-oriented PDF preflight tool.
+CI-friendly PDF preflight checks for print and publishing workflows.
 
-The prototype currently proves the basic flow:
+Presscheck runs target-driven PDF checks and turns the results into JSON reports, summaries, and CI exit codes:
 
 ```text
 target config -> analyzers -> findings -> severity evaluation -> JSON file -> exit code
@@ -20,7 +20,7 @@ target config -> analyzers -> findings -> severity evaluation -> JSON file -> ex
 Use the sample target config:
 
 ```bash
-uv run pdfdancer-preflight --target examples/targets/print-basic.yml --output result.json input.pdf
+uv run presscheck --target examples/targets/print-basic.yml --output result.json input.pdf
 ```
 
 The CLI writes JSON to the output file and exits nonzero when findings meet or exceed the target's `fail_at` severity.
@@ -28,7 +28,7 @@ The CLI writes JSON to the output file and exits nonzero when findings meet or e
 Compare a before/after pair:
 
 ```bash
-uv run pdfdancer-preflight \
+uv run presscheck \
   --target examples/targets/print-basic.yml \
   --output compare.json \
   before.pdf \
@@ -42,7 +42,7 @@ above the target's `fail_at` severity.
 Example with a known PDF:
 
 ```bash
-uv run pdfdancer-preflight \
+uv run presscheck \
   --target examples/targets/print-basic.yml \
   --output result.json \
   /path/to/file.pdf
@@ -51,7 +51,7 @@ uv run pdfdancer-preflight \
 Logs are written to stderr. The default log level is `info`.
 
 ```bash
-uv run pdfdancer-preflight \
+uv run presscheck \
   --target examples/targets/print-basic.yml \
   --output result.json \
   --log-level debug \
@@ -77,8 +77,8 @@ analyzers/pdfbox/build/libs/pdfbox-analyzer.jar
 Override the jar path:
 
 ```bash
-PDFDANCER_PREFLIGHT_PDFBOX_ANALYZER_JAR=/path/to/pdfbox-analyzer.jar \
-  uv run pdfdancer-preflight --target examples/targets/print-basic.yml --output result.json input.pdf
+PRESSCHECK_PDFBOX_ANALYZER_JAR=/path/to/pdfbox-analyzer.jar \
+  uv run presscheck --target examples/targets/print-basic.yml --output result.json input.pdf
 ```
 
 Run the analyzer directly:

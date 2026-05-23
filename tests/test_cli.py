@@ -3,7 +3,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from pdfdancer_preflight.cli import app
+from presscheck.cli import app
 
 
 def test_cli_returns_json_for_invalid_pdf(tmp_path: Path) -> None:
@@ -83,7 +83,7 @@ def test_cli_compare_mode_writes_comparison_and_individual_reports(tmp_path: Pat
             return _result(str(pdf), [_check("fonts", "fonts.non_embedded", "error", 1, [1])])
         return _result(str(pdf), [])
 
-    monkeypatch.setattr("pdfdancer_preflight.cli.run_preflight", fake_run_preflight)
+    monkeypatch.setattr("presscheck.cli.run_preflight", fake_run_preflight)
 
     result = CliRunner().invoke(
         app,
@@ -116,7 +116,7 @@ def test_cli_compare_mode_exits_one_for_fail_threshold_regression(tmp_path: Path
             return _result(str(pdf), [])
         return _result(str(pdf), [_check("fonts", "fonts.non_embedded", "error", 1, [1])])
 
-    monkeypatch.setattr("pdfdancer_preflight.cli.run_preflight", fake_run_preflight)
+    monkeypatch.setattr("presscheck.cli.run_preflight", fake_run_preflight)
 
     result = CliRunner().invoke(
         app,
