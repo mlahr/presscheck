@@ -25,6 +25,20 @@ uv run pdfdancer-preflight --target examples/targets/print-basic.yml --output re
 
 The CLI writes JSON to the output file and exits nonzero when findings meet or exceed the target's `fail_at` severity.
 
+Compare a before/after pair:
+
+```bash
+uv run pdfdancer-preflight \
+  --target examples/targets/print-basic.yml \
+  --output compare.json \
+  before.pdf \
+  after.pdf
+```
+
+Compare mode runs preflight on both PDFs, writes `compare.json`, `compare.before.json`, and `compare.after.json`,
+and prints a concise human-readable diff. It exits nonzero only when the after PDF adds or worsens findings at or
+above the target's `fail_at` severity.
+
 Example with a known PDF:
 
 ```bash

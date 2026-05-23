@@ -1,0 +1,53 @@
+{
+  "fail_at": "error",
+  "failed": false,
+  "findings": [
+    {
+      "analyzer": "pdfbox",
+      "category": "color",
+      "check_id": "color.image_color_space_policy",
+      "evidence_type": "factual",
+      "message": "Image uses color space family DeviceCMYK.",
+      "object_ref": "Im0",
+      "observed": {
+        "color_space_family": "DeviceCMYK",
+        "color_space_name": "DeviceCMYK",
+        "resource_name": "Im0"
+      },
+      "page": 2,
+      "severity": "info",
+      "source_tool": "pdfbox",
+      "threshold": {
+        "severity_by_family": {
+          "DeviceCMYK": "info"
+        }
+      }
+    }
+  ],
+  "input": "fixtures/ebooks/TheNowhereEmporium_Klett_548634_Leseprobe.pdf",
+  "ok": true,
+  "summary": {
+    "by_check": [
+      {
+        "category": "color",
+        "check_id": "color.image_color_space_policy",
+        "count": 1,
+        "pages": [
+          2
+        ],
+        "severity": "info"
+      }
+    ],
+    "by_severity": {
+      "error": 0,
+      "info": 1,
+      "warning": 0
+    },
+    "color": {
+      "image_color_space_findings_by_family": {
+        "DeviceCMYK": 1
+      }
+    },
+    "total_findings": 1
+  }
+}
