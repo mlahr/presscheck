@@ -107,6 +107,10 @@ Run the Java analyzer tests:
 ./gradlew :analyzers:pdfbox:test
 ```
 
+## License
+
+Presscheck is licensed under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
+
 ## Inspect Reports
 
 Reports include a built-in summary:
