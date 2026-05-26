@@ -58,6 +58,41 @@ uv run presscheck \
   /path/to/file.pdf
 ```
 
+## REST API
+
+Start the local trusted API server:
+
+```bash
+uv run presscheck-api --host 127.0.0.1 --port 8000
+```
+
+Submit a preflight job:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/preflight-jobs \
+  -F "pdf=@input.pdf;type=application/pdf" \
+  -F "target=@examples/targets/print-basic.yml"
+```
+
+Submit a before/after comparison job:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/compare-jobs \
+  -F "before_pdf=@before.pdf;type=application/pdf" \
+  -F "after_pdf=@after.pdf;type=application/pdf" \
+  -F "target=@examples/targets/print-basic.yml"
+```
+
+Poll the job and fetch the result:
+
+```bash
+curl -s http://127.0.0.1:8000/v1/jobs/$JOB_ID
+curl -s http://127.0.0.1:8000/v1/jobs/$JOB_ID/result
+```
+
+Analysis jobs run asynchronously in-process. By default the API uses one worker and keeps completed job metadata/results
+in memory for one hour. Override with `PRESSCHECK_API_WORKERS` and `PRESSCHECK_API_JOB_TTL_SECONDS`.
+
 ## PDFBox Analyzer
 
 The Python CLI calls PDFBox through an external Java analyzer jar.

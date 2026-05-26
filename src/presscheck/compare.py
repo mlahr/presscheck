@@ -9,26 +9,27 @@ CHANGE_GROUPS = ("added", "resolved", "worsened", "improved", "changed_pages")
 
 
 def compare_results(
-    before: dict[str, Any], after: dict[str, Any], before_output: Path, after_output: Path
+    before: dict[str, Any],
+    after: dict[str, Any],
+    before_output: Path | None = None,
+    after_output: Path | None = None,
 ) -> dict[str, Any]:
     fail_at = Severity.parse(str(after["fail_at"]))
     changes = _compare_checks(before["summary"]["by_check"], after["summary"]["by_check"])
     regressed = _has_regression(changes, fail_at)
-    return {
+    result = {
         "ok": not regressed,
         "failed": regressed,
         "regressed": regressed,
         "fail_at": fail_at.name,
         "before": {
             "input": before["input"],
-            "output": str(before_output),
             "ok": before["ok"],
             "failed": before["failed"],
             "summary": before["summary"],
         },
         "after": {
             "input": after["input"],
-            "output": str(after_output),
             "ok": after["ok"],
             "failed": after["failed"],
             "summary": after["summary"],
@@ -36,6 +37,11 @@ def compare_results(
         "summary_delta": _summary_delta(before["summary"], after["summary"]),
         "changes": changes,
     }
+    if before_output is not None:
+        result["before"]["output"] = str(before_output)
+    if after_output is not None:
+        result["after"]["output"] = str(after_output)
+    return result
 
 
 def format_comparison(result: dict[str, Any]) -> str:

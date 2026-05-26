@@ -6,16 +6,21 @@ readme = "README.md"
 requires-python = ">=3.13"
 license = "AGPL-3.0-only"
 dependencies = [
+    "fastapi>=0.115.6",
+    "python-multipart>=0.0.20",
     "pypdf>=5.1.0",
     "pyyaml>=6.0.2",
     "typer>=0.15.1",
+    "uvicorn>=0.34.0",
 ]
 
 [project.scripts]
 presscheck = "presscheck.cli:app"
+presscheck-api = "presscheck.api_cli:app"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=8.3.4",
     "ruff>=0.8.4",
 ]
