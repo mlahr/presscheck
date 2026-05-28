@@ -93,6 +93,27 @@ curl -s http://127.0.0.1:8000/v1/jobs/$JOB_ID/result
 Analysis jobs run asynchronously in-process. By default the API uses one worker and keeps completed job metadata/results
 in memory for one hour. Override with `PRESSCHECK_API_WORKERS` and `PRESSCHECK_API_JOB_TTL_SECONDS`.
 
+## Docker
+
+Build the image locally:
+
+```bash
+docker build -t presscheck:local .
+```
+
+Run the API:
+
+```bash
+docker run --rm -p 8000:8000 presscheck:local
+```
+
+Run the CLI against local files by mounting the current directory:
+
+```bash
+docker run --rm -v "$PWD:/work" presscheck:local \
+  presscheck --target examples/targets/print-basic.yml --output result.json input.pdf
+```
+
 ## PDFBox Analyzer
 
 The Python CLI calls PDFBox through an external Java analyzer jar.

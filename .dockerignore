@@ -1,0 +1,14 @@
+.git
+.github
+.gradle
+.idea
+.pytest_cache
+.ruff_cache
+.venv
+**/__pycache__
+**/*.py[cod]
+**/build
+build
+fixtures
+report.json
+report.*.json
