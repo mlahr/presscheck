@@ -70,11 +70,7 @@ jobs:
           set -euo pipefail
 
           package="${GITHUB_REPOSITORY#*/}"
-          visibility="$(
-            gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}" --jq .visibility 2>/dev/null || true
-          )"
-
-          if [ -z "${visibility}" ]; then
+          if ! visibility="$(gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}" --jq .visibility 2>/dev/null)"; then
             echo "GHCR package ${GITHUB_REPOSITORY_OWNER}/${package} does not exist yet; post-publish privacy checks will enforce visibility."
             exit 0
           fi
@@ -102,7 +98,12 @@ jobs:
           set -euo pipefail
 
           package="${GITHUB_REPOSITORY#*/}"
-          visibility="$(gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}" --jq .visibility)"
+          visibility="$(
+            gh api "/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${package}" --jq .visibility
+          )" || {
+            echo "::error::Could not read GHCR package metadata for ${GITHUB_REPOSITORY_OWNER}/${package}. Grant this repository Actions access to the package, or publish with a token that has package read access."
+            exit 1
+          }
 
           if [ "${visibility}" != "private" ]; then
             echo "::error::GHCR package ${GITHUB_REPOSITORY_OWNER}/${package} visibility is '${visibility}', expected 'private'."

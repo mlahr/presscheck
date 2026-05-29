@@ -264,6 +264,23 @@ Example targets:
 
 - `examples/targets/print-basic.yml`: print-oriented; requires trim and bleed boxes.
 - `examples/targets/ebook.yml`: digital/ebook-oriented; only requires `MediaBox`, disables trim-size checks, and uses lower image DPI severity/thresholds.
+- `examples/targets/online-fontswap.yml`: online font replacement workflow; fails structural/security issues and missing embedded fonts, while reporting layout and quality risks as warnings.
+
+Validate a generated fontswap PDF:
+
+```bash
+uv run presscheck --target examples/targets/online-fontswap.yml --output result.json output.pdf
+```
+
+Compare the original PDF to the swapped PDF:
+
+```bash
+uv run presscheck \
+  --target examples/targets/online-fontswap.yml \
+  --output compare.json \
+  original.pdf \
+  swapped.pdf
+```
 
 Example:
 

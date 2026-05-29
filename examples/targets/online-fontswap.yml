@@ -1,0 +1,205 @@
+fail_at: error
+checks:
+  document_integrity.ghostscript_processable:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  document_metadata.pdf_version_policy:
+    enabled: true
+    severity: info
+    allowed_versions: []
+    timeout_seconds: 60
+  document_metadata.pdfx_policy:
+    enabled: true
+    severity: info
+    require_pdfx: false
+    allowed_versions: []
+    timeout_seconds: 60
+  document_metadata.pdfa_policy:
+    enabled: true
+    severity: info
+    require_pdfa: false
+    allowed_parts: []
+    allowed_conformance: []
+    timeout_seconds: 60
+  document_metadata.producer_policy:
+    enabled: true
+    severity: info
+    disallowed_contains: []
+    warn_contains: []
+    timeout_seconds: 60
+  pages.count_policy:
+    enabled: true
+    severity: error
+    min_count: 1
+    timeout_seconds: 60
+  pages.parity_policy:
+    enabled: false
+    severity: info
+    required_parity: even
+    timeout_seconds: 60
+  pages.size_consistency:
+    enabled: true
+    severity: warning
+    box: MediaBox
+    tolerance_pt: 0.5
+    timeout_seconds: 60
+  pages.blank_policy:
+    enabled: true
+    severity: warning
+    allowed_pages: []
+    allow_trailing_blank: true
+    max_blank_pages: 0
+    timeout_seconds: 60
+  fonts.non_embedded:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  fonts.minimum_text_size:
+    enabled: true
+    severity: warning
+    min_pt: 5
+    timeout_seconds: 60
+  images.low_effective_resolution:
+    enabled: true
+    severity: warning
+    min_dpi: 120
+    timeout_seconds: 60
+  images.jpeg_compression_policy:
+    enabled: false
+    severity: info
+    timeout_seconds: 60
+  images.image_filter_policy:
+    enabled: true
+    severity: warning
+    severity_by_filter:
+      DCTDecode:
+      FlateDecode:
+      CCITTFaxDecode:
+      JPXDecode: warning
+      JBIG2Decode: warning
+      Other: warning
+    timeout_seconds: 60
+  images.has_soft_mask:
+    enabled: false
+    severity: warning
+    timeout_seconds: 60
+  color.image_color_space_policy:
+    enabled: true
+    severity: info
+    severity_by_family:
+      DeviceRGB:
+      ICCBasedRGB:
+      DeviceCMYK: info
+      ICCBasedCMYK: info
+      DeviceGray:
+      ICCBasedGray:
+      Indexed:
+      Separation: info
+      DeviceN: info
+      Other: info
+  color.output_intent_required:
+    enabled: false
+    severity: warning
+    timeout_seconds: 60
+  color.registration_color_misuse:
+    enabled: false
+    severity: warning
+    timeout_seconds: 60
+  color.spot_color_policy:
+    enabled: false
+    severity: info
+    allowed_colorants: []
+    ignored_colorants:
+      - All
+      - None
+    timeout_seconds: 60
+  graphics.overprint_policy:
+    enabled: false
+    severity: info
+    timeout_seconds: 60
+  interactive.annotation_policy:
+    enabled: true
+    severity: warning
+    severity_by_subtype:
+      Link:
+      Widget: warning
+      FileAttachment: error
+      Movie: error
+      Sound: error
+      Screen: error
+      Other: warning
+    timeout_seconds: 60
+  interactive.link_uri_policy:
+    enabled: true
+    severity: warning
+    allowed_schemes:
+      - http
+      - https
+      - mailto
+    disallow_all: false
+    timeout_seconds: 60
+  interactive.annotation_bounds_within_box:
+    enabled: true
+    severity: warning
+    box: CropBox
+    tolerance_pt: 0.5
+    timeout_seconds: 60
+  interactive.javascript_policy:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  interactive.embedded_files_policy:
+    enabled: true
+    severity: error
+    timeout_seconds: 60
+  interactive.form_policy:
+    enabled: true
+    severity: warning
+    timeout_seconds: 60
+  transparency.live_transparency_policy:
+    enabled: false
+    severity: info
+    severity_by_feature:
+      stroking_alpha:
+      non_stroking_alpha:
+      soft_mask:
+      blend_mode:
+      transparency_group:
+    timeout_seconds: 60
+  geometry.page_boxes_present:
+    enabled: true
+    severity: error
+    required_boxes:
+      - MediaBox
+  geometry.trim_size_matches:
+    enabled: false
+    severity: warning
+    expected_width_pt: 612
+    expected_height_pt: 792
+    tolerance_pt: 0.5
+  geometry.bleed_margin_at_least:
+    enabled: false
+    severity: warning
+    margin_pt: 9
+    tolerance_pt: 0.5
+  geometry.object_bounds_within_box:
+    enabled: false
+    severity: warning
+    box: BleedBox
+    tolerance_pt: 0.5
+  geometry.safe_area_margin:
+    enabled: false
+    severity: info
+    box: TrimBox
+    margins_pt:
+      left: 18
+      right: 18
+      top: 18
+      bottom: 18
+    include_object_types:
+      - text
+      - image
+      - form
+    ignore_objects_crossing_trim: true
+    tolerance_pt: 0.5

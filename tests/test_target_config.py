@@ -36,3 +36,21 @@ def test_requires_checks(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="checks"):
         load_target_config(path)
 
+
+def test_online_fontswap_target_policy() -> None:
+    target = load_target_config(Path("examples/targets/online-fontswap.yml"))
+
+    assert target.fail_at == Severity.error
+
+    font_check = target.check("fonts.non_embedded")
+    assert font_check is not None
+    assert font_check.severity == Severity.error
+
+    assert target.check("geometry.trim_size_matches") is None
+    assert target.check("geometry.bleed_margin_at_least") is None
+    assert target.check("color.output_intent_required") is None
+
+    link_check = target.check("interactive.link_uri_policy")
+    assert link_check is not None
+    assert link_check.params["allowed_schemes"] == ["http", "https", "mailto"]
+    assert link_check.params["disallow_all"] is False
