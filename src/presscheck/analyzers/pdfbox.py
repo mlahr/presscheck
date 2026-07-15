@@ -55,6 +55,7 @@ DOCUMENT_INFO_EVIDENCE = "document_metadata.info"
 XMP_STANDARDS_EVIDENCE = "document_metadata.xmp_standards"
 FAILURE_CHECK = "document_integrity.pdfbox_analyzer_failed"
 DEFAULT_TIMEOUT_SECONDS = 60
+DIAGNOSTIC_PREVIEW_CHARS = 1000
 BOX_KEYS = {
     "MediaBox": "/MediaBox",
     "TrimBox": "/TrimBox",
@@ -128,9 +129,32 @@ def analyze(pdf_path: Path, target: TargetConfig) -> list[Finding]:
 
     try:
         payload = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        logger.error("PDFBox analyzer emitted invalid JSON")
-        return [_failure("PDFBox analyzer emitted invalid JSON.", target, {})]
+    except json.JSONDecodeError as exc:
+        stderr = getattr(completed, "stderr", "")
+        observed = {
+            "json_error": exc.msg,
+            "json_error_line": exc.lineno,
+            "json_error_column": exc.colno,
+            "json_error_char": exc.pos,
+            "stdout_chars": len(completed.stdout),
+            "stderr_chars": len(stderr),
+            "stdout_error_context": _diagnostic_context(completed.stdout, exc.pos),
+            "stderr_preview": _diagnostic_preview(stderr),
+        }
+        logger.error(
+            "PDFBox analyzer emitted invalid JSON: "
+            "error=%s line=%s column=%s char=%s stdout_chars=%s stderr_chars=%s "
+            "stdout_error_context=%r stderr_preview=%r",
+            exc.msg,
+            exc.lineno,
+            exc.colno,
+            exc.pos,
+            len(completed.stdout),
+            len(stderr),
+            observed["stdout_error_context"],
+            observed["stderr_preview"],
+        )
+        return [_failure("PDFBox analyzer emitted invalid JSON.", target, observed)]
 
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         logger.error("PDFBox analyzer returned unsuccessful payload")
@@ -330,6 +354,25 @@ def _jar_path() -> Path:
     if override:
         return Path(override)
     return Path.cwd() / "analyzers" / "pdfbox" / "build" / "libs" / "pdfbox-analyzer.jar"
+
+
+def _diagnostic_preview(value: str) -> str:
+    if len(value) <= DIAGNOSTIC_PREVIEW_CHARS:
+        return value
+    omitted = len(value) - DIAGNOSTIC_PREVIEW_CHARS
+    return f"{value[:DIAGNOSTIC_PREVIEW_CHARS]}... <{omitted} chars omitted>"
+
+
+def _diagnostic_context(value: str, position: int) -> str:
+    if len(value) <= DIAGNOSTIC_PREVIEW_CHARS:
+        return value
+
+    before = DIAGNOSTIC_PREVIEW_CHARS // 2
+    start = max(0, min(position - before, len(value) - DIAGNOSTIC_PREVIEW_CHARS))
+    end = start + DIAGNOSTIC_PREVIEW_CHARS
+    prefix = f"<{start} chars omitted> ..." if start else ""
+    suffix = f"... <{len(value) - end} chars omitted>" if end < len(value) else ""
+    return f"{prefix}{value[start:end]}{suffix}"
 
 
 def _is_non_embedded_font_evidence(item: Any) -> bool:

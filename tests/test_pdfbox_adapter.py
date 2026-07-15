@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -241,15 +242,61 @@ def test_pdfbox_adapter_fails_closed_when_jar_missing(tmp_path: Path, monkeypatc
     assert findings[0].severity == Severity.error
 
 
-def test_pdfbox_adapter_fails_closed_on_invalid_json(tmp_path: Path, monkeypatch) -> None:
+def test_pdfbox_adapter_fails_closed_on_invalid_json(tmp_path: Path, monkeypatch, caplog) -> None:
     jar = tmp_path / "pdfbox-analyzer.jar"
     jar.write_text("placeholder", encoding="utf-8")
     monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
-    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="not json"))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout='{"ok": true}\nPDFBox diagnostic',
+            stderr="parser warning\nsecond line",
+        ),
+    )
 
-    findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
+    with caplog.at_level(logging.ERROR):
+        findings = pdfbox.analyze(tmp_path / "input.pdf", _target())
 
     assert findings[0].check_id == "document_integrity.pdfbox_analyzer_failed"
+    assert findings[0].observed == {
+        "json_error": "Extra data",
+        "json_error_line": 2,
+        "json_error_column": 1,
+        "json_error_char": 13,
+        "stdout_chars": 30,
+        "stderr_chars": 26,
+        "stdout_error_context": '{"ok": true}\nPDFBox diagnostic',
+        "stderr_preview": "parser warning\nsecond line",
+    }
+    assert "error=Extra data line=2 column=1 char=13" in caplog.text
+    assert "stdout_error_context='{\"ok\": true}\\nPDFBox diagnostic'" in caplog.text
+    assert "stderr_preview='parser warning\\nsecond line'" in caplog.text
+
+
+def test_pdfbox_adapter_bounds_invalid_json_diagnostics(tmp_path: Path, monkeypatch) -> None:
+    jar = tmp_path / "pdfbox-analyzer.jar"
+    jar.write_text("placeholder", encoding="utf-8")
+    monkeypatch.setenv("PRESSCHECK_PDFBOX_ANALYZER_JAR", str(jar))
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="x" * 2000,
+            stderr="y" * 2000,
+        ),
+    )
+
+    finding = pdfbox.analyze(tmp_path / "input.pdf", _target())[0]
+
+    assert finding.observed["stdout_chars"] == 2000
+    assert finding.observed["stderr_chars"] == 2000
+    assert len(finding.observed["stdout_error_context"]) < 1100
+    assert len(finding.observed["stderr_preview"]) < 1100
+    assert "chars omitted" in finding.observed["stdout_error_context"]
+    assert "chars omitted" in finding.observed["stderr_preview"]
 
 
 def test_pdfbox_adapter_maps_minimum_text_size_evidence(tmp_path: Path, monkeypatch) -> None:

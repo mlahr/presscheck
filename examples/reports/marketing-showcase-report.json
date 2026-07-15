@@ -1,0 +1,507 @@
+{
+  "ok": false,
+  "failed": true,
+  "input": "brand-campaign-print-ready.pdf",
+  "fail_at": "error",
+  "summary": {
+    "total_findings": 17,
+    "by_severity": {
+      "info": 0,
+      "warning": 10,
+      "error": 7
+    },
+    "by_check": [
+      {
+        "check_id": "color.image_color_space_policy",
+        "category": "color",
+        "severity": "error",
+        "count": 1,
+        "pages": [
+          4
+        ]
+      },
+      {
+        "check_id": "color.image_color_space_policy",
+        "category": "color",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          9
+        ]
+      },
+      {
+        "check_id": "color.output_intent_required",
+        "category": "color",
+        "severity": "error",
+        "count": 1,
+        "pages": []
+      },
+      {
+        "check_id": "document_metadata.pdf_version_policy",
+        "category": "document_metadata",
+        "severity": "warning",
+        "count": 1,
+        "pages": []
+      },
+      {
+        "check_id": "fonts.minimum_text_size",
+        "category": "fonts",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          2
+        ]
+      },
+      {
+        "check_id": "fonts.non_embedded",
+        "category": "fonts",
+        "severity": "error",
+        "count": 1,
+        "pages": [
+          1,
+          3,
+          8
+        ]
+      },
+      {
+        "check_id": "geometry.bleed_margin_at_least",
+        "category": "geometry",
+        "severity": "error",
+        "count": 1,
+        "pages": [
+          1
+        ]
+      },
+      {
+        "check_id": "geometry.safe_area_margin",
+        "category": "geometry",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          7
+        ]
+      },
+      {
+        "check_id": "images.has_soft_mask",
+        "category": "images",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          2
+        ]
+      },
+      {
+        "check_id": "images.jpeg_compression_policy",
+        "category": "images",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          5
+        ]
+      },
+      {
+        "check_id": "images.low_effective_resolution",
+        "category": "images",
+        "severity": "error",
+        "count": 2,
+        "pages": [
+          3,
+          8
+        ]
+      },
+      {
+        "check_id": "interactive.javascript_policy",
+        "category": "interactive",
+        "severity": "error",
+        "count": 1,
+        "pages": []
+      },
+      {
+        "check_id": "interactive.link_uri_policy",
+        "category": "interactive",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          10
+        ]
+      },
+      {
+        "check_id": "pages.blank_policy",
+        "category": "pages",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          12
+        ]
+      },
+      {
+        "check_id": "pages.parity_policy",
+        "category": "pages",
+        "severity": "warning",
+        "count": 1,
+        "pages": []
+      },
+      {
+        "check_id": "transparency.live_transparency_policy",
+        "category": "transparency",
+        "severity": "warning",
+        "count": 1,
+        "pages": [
+          6
+        ]
+      }
+    ],
+    "color": {
+      "image_color_space_findings_by_family": {
+        "DeviceRGB": 1,
+        "Indexed": 1
+      }
+    }
+  },
+  "findings": [
+    {
+      "check_id": "document_metadata.pdf_version_policy",
+      "category": "document_metadata",
+      "severity": "warning",
+      "message": "PDF version 2.0 exceeds the configured maximum version 1.7.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "evidence_type": "factual",
+      "observed": {
+        "pdf_version": "2.0"
+      },
+      "threshold": {
+        "max_version": "1.7"
+      }
+    },
+    {
+      "check_id": "pages.parity_policy",
+      "category": "pages",
+      "severity": "warning",
+      "message": "Document has an odd page count; the target requires even page count for print signatures.",
+      "analyzer": "geometry",
+      "evidence_type": "factual",
+      "observed": {
+        "page_count": 13,
+        "parity": "odd"
+      },
+      "threshold": {
+        "required_parity": "even"
+      }
+    },
+    {
+      "check_id": "pages.blank_policy",
+      "category": "pages",
+      "severity": "warning",
+      "message": "Page 12 is structurally blank and is not allowed by the target.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 12,
+      "evidence_type": "factual",
+      "observed": {
+        "blank": true,
+        "content_streams": 0,
+        "visible_objects": 0
+      },
+      "threshold": {
+        "allowed_pages": [],
+        "allow_trailing_blank": false,
+        "max_blank_pages": 0
+      }
+    },
+    {
+      "check_id": "fonts.non_embedded",
+      "category": "fonts",
+      "severity": "error",
+      "message": "Font BrandSans-Regular is used but not embedded.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "object_ref": "font:BrandSans-Regular",
+      "evidence_type": "factual",
+      "observed": {
+        "font_name": "BrandSans-Regular",
+        "subtype": "Type0",
+        "pages": [
+          1,
+          3,
+          8
+        ]
+      }
+    },
+    {
+      "check_id": "fonts.minimum_text_size",
+      "category": "fonts",
+      "severity": "warning",
+      "message": "Text is rendered below the configured 6 pt minimum.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 2,
+      "object_ref": "text:p2:g17",
+      "evidence_type": "factual",
+      "observed": {
+        "font_name": "BrandSans-Light",
+        "subtype": "Type0",
+        "effective_size_pt": 4.8
+      },
+      "threshold": {
+        "min_pt": 6
+      }
+    },
+    {
+      "check_id": "images.low_effective_resolution",
+      "category": "images",
+      "severity": "error",
+      "message": "Placed image resolves below the configured 300 DPI minimum.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 3,
+      "object_ref": "image:p3:x14",
+      "evidence_type": "factual",
+      "observed": {
+        "width_px": 1200,
+        "height_px": 900,
+        "display_width_pt": 432.0,
+        "display_height_pt": 324.0,
+        "x_dpi": 200,
+        "y_dpi": 200,
+        "min_dpi": 200
+      },
+      "threshold": {
+        "min_dpi": 300
+      }
+    },
+    {
+      "check_id": "images.low_effective_resolution",
+      "category": "images",
+      "severity": "error",
+      "message": "Placed image resolves below the configured 300 DPI minimum.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 8,
+      "object_ref": "image:p8:x3",
+      "evidence_type": "factual",
+      "observed": {
+        "width_px": 900,
+        "height_px": 900,
+        "display_width_pt": 288.0,
+        "display_height_pt": 288.0,
+        "x_dpi": 225,
+        "y_dpi": 225,
+        "min_dpi": 225
+      },
+      "threshold": {
+        "min_dpi": 300
+      }
+    },
+    {
+      "check_id": "images.jpeg_compression_policy",
+      "category": "images",
+      "severity": "warning",
+      "message": "Placed image uses JPEG/DCT compression.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 5,
+      "object_ref": "image:p5:x8",
+      "evidence_type": "factual",
+      "observed": {
+        "filters": [
+          "DCTDecode"
+        ]
+      }
+    },
+    {
+      "check_id": "images.has_soft_mask",
+      "category": "images",
+      "severity": "warning",
+      "message": "Placed image uses a soft mask.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 2,
+      "object_ref": "image:p2:x5",
+      "evidence_type": "factual",
+      "observed": {
+        "has_soft_mask": true,
+        "soft_mask_ref": "45 0 R"
+      }
+    },
+    {
+      "check_id": "color.image_color_space_policy",
+      "category": "color",
+      "severity": "error",
+      "message": "Placed image uses DeviceRGB, which is configured as an error for this target.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 4,
+      "object_ref": "image:p4:x2",
+      "evidence_type": "factual",
+      "observed": {
+        "color_space_family": "DeviceRGB",
+        "color_space": "DeviceRGB"
+      },
+      "threshold": {
+        "severity_by_family": {
+          "DeviceRGB": "error"
+        }
+      }
+    },
+    {
+      "check_id": "color.image_color_space_policy",
+      "category": "color",
+      "severity": "warning",
+      "message": "Placed image uses Indexed color, which is configured as a warning for this target.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 9,
+      "object_ref": "image:p9:x4",
+      "evidence_type": "factual",
+      "observed": {
+        "color_space_family": "Indexed",
+        "color_space": "Indexed DeviceRGB"
+      },
+      "threshold": {
+        "severity_by_family": {
+          "Indexed": "warning"
+        }
+      }
+    },
+    {
+      "check_id": "color.output_intent_required",
+      "category": "color",
+      "severity": "error",
+      "message": "Document does not declare an OutputIntent.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "evidence_type": "factual",
+      "observed": {
+        "output_intents": 0
+      },
+      "threshold": {
+        "required": true
+      }
+    },
+    {
+      "check_id": "transparency.live_transparency_policy",
+      "category": "transparency",
+      "severity": "warning",
+      "message": "Page content uses live transparency features.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 6,
+      "object_ref": "graphics:p6:g21",
+      "evidence_type": "factual",
+      "observed": {
+        "features": [
+          "non_stroking_alpha",
+          "blend_mode"
+        ],
+        "non_stroking_alpha": 0.72,
+        "blend_mode": "Multiply"
+      },
+      "threshold": {
+        "severity_by_feature": {
+          "non_stroking_alpha": "warning",
+          "blend_mode": "warning"
+        }
+      }
+    },
+    {
+      "check_id": "geometry.bleed_margin_at_least",
+      "category": "geometry",
+      "severity": "error",
+      "message": "Page 1 BleedBox margin is below the configured 9 pt minimum.",
+      "analyzer": "geometry",
+      "page": 1,
+      "evidence_type": "factual",
+      "observed": {
+        "trim_box": [
+          18.0,
+          18.0,
+          630.0,
+          810.0
+        ],
+        "bleed_box": [
+          12.0,
+          12.0,
+          636.0,
+          816.0
+        ],
+        "margins_pt": {
+          "left": 6.0,
+          "right": 6.0,
+          "top": 6.0,
+          "bottom": 6.0
+        }
+      },
+      "threshold": {
+        "margin_pt": 9.0,
+        "tolerance_pt": 0.5
+      }
+    },
+    {
+      "check_id": "geometry.safe_area_margin",
+      "category": "geometry",
+      "severity": "warning",
+      "message": "Text content sits inside the configured 18 pt safe-area margin.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 7,
+      "object_ref": "text:p7:g9",
+      "evidence_type": "factual",
+      "observed": {
+        "object_type": "text",
+        "box": "TrimBox",
+        "bounds_pt": [
+          24.0,
+          764.0,
+          182.0,
+          779.0
+        ],
+        "violations": [
+          "top"
+        ]
+      },
+      "threshold": {
+        "box": "TrimBox",
+        "margins_pt": {
+          "left": 18,
+          "right": 18,
+          "top": 18,
+          "bottom": 18
+        },
+        "tolerance_pt": 0.5
+      }
+    },
+    {
+      "check_id": "interactive.link_uri_policy",
+      "category": "interactive",
+      "severity": "warning",
+      "message": "Link annotation uses a URI scheme that is disallowed by this target.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "page": 10,
+      "object_ref": "annotation:p10:a2",
+      "evidence_type": "factual",
+      "observed": {
+        "uri": "https://example.invalid/campaign",
+        "uri_scheme": "https"
+      },
+      "threshold": {
+        "allowed_schemes": [],
+        "disallow_all": true
+      }
+    },
+    {
+      "check_id": "interactive.javascript_policy",
+      "category": "interactive",
+      "severity": "error",
+      "message": "Document contains JavaScript actions.",
+      "analyzer": "pdfbox",
+      "source_tool": "pdfbox-analyzer",
+      "evidence_type": "factual",
+      "observed": {
+        "location": "document_catalog",
+        "action_type": "JavaScript"
+      }
+    }
+  ]
+}
